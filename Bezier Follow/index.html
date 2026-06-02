@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bezier Follow</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">micro:bit + Bluetooth</p>
+        <h1>Bezier Follow</h1>
+      </div>
+      <div class="status-pill" id="status">Pret</div>
+    </header>
+
+    <main class="workspace">
+      <section class="visualizer" aria-label="Trajectoire 3D enregistree">
+        <canvas id="trackCanvas"></canvas>
+        <div class="canvas-overlay">
+          <div>
+            <span class="label">Samples</span>
+            <strong id="sampleCount">0</strong>
+          </div>
+          <div>
+            <span class="label">Duree</span>
+            <strong id="duration">0.0 s</strong>
+          </div>
+          <div>
+            <span class="label">G max</span>
+            <strong id="gMax">0.00</strong>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <section class="controls">
+          <button id="connectButton" type="button">Connecter micro:bit</button>
+          <button id="scanAllButton" type="button" class="secondary">Scan complet</button>
+          <button id="recordButton" type="button" class="record" disabled>Start recording</button>
+          <button id="simulateButton" type="button" class="secondary">Simulation</button>
+          <button id="resetButton" type="button" class="secondary">Reset</button>
+        </section>
+
+        <section class="readouts" aria-label="Mesures live">
+          <h2>Live</h2>
+          <dl>
+            <div>
+              <dt>Acceleration</dt>
+              <dd id="accelReadout">x:0 y:0 z:0</dd>
+            </div>
+            <div>
+              <dt>Rotation</dt>
+              <dd id="rotationReadout">pitch:0 roll:0 heading:0</dd>
+            </div>
+            <div>
+              <dt>Vitesse estimee</dt>
+              <dd id="speedReadout">0.00</dd>
+            </div>
+            <div>
+              <dt>Position relative 3D</dt>
+              <dd id="positionReadout">x:0.00 y:0.00 z:0.00</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="chart-section">
+          <h2>Acceleration</h2>
+          <canvas id="accelCanvas"></canvas>
+        </section>
+
+        <section class="exports">
+          <button id="downloadJsonButton" type="button" class="secondary" disabled>Exporter JSON</button>
+          <button id="downloadCsvButton" type="button" class="secondary" disabled>Exporter CSV</button>
+        </section>
+
+        <section class="notes">
+          <h2>Format micro:bit</h2>
+          <code>{"x":12,"y":-8,"z":1010,"pitch":4,"roll":-2,"heading":180}</code>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

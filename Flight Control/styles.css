@@ -1,0 +1,265 @@
+:root {
+  color-scheme: dark;
+  --bg: #07111a;
+  --bg-accent: #10263a;
+  --panel: rgba(8, 20, 30, 0.84);
+  --line: rgba(157, 196, 224, 0.18);
+  --text: #e9f2f8;
+  --muted: #8ea7bb;
+  --accent: #67d6ff;
+  --accent-2: #ffd166;
+  --danger: #ff7b72;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top, rgba(47, 95, 138, 0.32), transparent 38%),
+    linear-gradient(135deg, #02070b, var(--bg) 45%, #051826 100%);
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(300px, 420px) 1fr;
+  min-height: 100vh;
+}
+
+.panel {
+  padding: 2rem;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  line-height: 0.95;
+}
+
+.intro,
+.notes p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+  flex-wrap: wrap;
+}
+
+button {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.9rem 1.2rem;
+  font: inherit;
+  font-weight: 700;
+  color: #03131c;
+  background: linear-gradient(135deg, var(--accent), #9ff4ff);
+  cursor: pointer;
+}
+
+button.secondary {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+button.compact {
+  justify-self: start;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.axis-controls {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0 0 1.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.axis-controls h2 {
+  margin: 0 0 0.2rem;
+  font-size: 1rem;
+}
+
+.axis-controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.axis-controls input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent);
+}
+
+.axis-controls .range-control {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.35rem;
+}
+
+.axis-controls input[type="range"] {
+  width: 100%;
+  height: 0.35rem;
+}
+
+.axis-controls input:disabled + span {
+  color: var(--muted);
+}
+
+.telemetry {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+}
+
+.telemetry div {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+dt {
+  margin-bottom: 0.35rem;
+  color: var(--muted);
+}
+
+dd {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.notes {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid var(--line);
+  background: rgba(255, 209, 102, 0.06);
+}
+
+code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--accent-2);
+}
+
+.viewer {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+#scene {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hud {
+  position: absolute;
+  left: 1.2rem;
+  right: 1.2rem;
+  bottom: 1.2rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 0.8rem 1rem;
+  border-radius: 999px;
+  background: rgba(5, 18, 28, 0.68);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+}
+
+.stick-preview {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: min(26vw, 190px);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(5, 18, 28, 0.62);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+
+.stick-slot {
+  width: 86%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background:
+    linear-gradient(rgba(157, 196, 224, 0.18), rgba(157, 196, 224, 0.18)) center / 1px 100% no-repeat,
+    linear-gradient(90deg, rgba(157, 196, 224, 0.18), rgba(157, 196, 224, 0.18)) center / 100% 1px no-repeat;
+  perspective: 360px;
+}
+
+#stickVisual {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: 50% 64%;
+  filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.28));
+  transition: transform 80ms linear;
+  will-change: transform;
+}
+
+strong {
+  color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .viewer {
+    min-height: 60vh;
+  }
+
+  .stick-preview {
+    width: 136px;
+  }
+}

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Micro:bit Flight Controller</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="panel">
+      <p class="eyebrow">micro:bit + USB Serial</p>
+      <h1>Avion 3D pilote par manette</h1>
+      <p class="intro">
+        Fixez le micro:bit dans la manette, face visible et cable vers le bas.
+        Tournez la manette pour le roulis, poussez ou tirez pour le tangage.
+        La connexion passe maintenant par le cable USB pour eviter les soucis Bluetooth.
+      </p>
+
+      <div class="actions">
+        <button id="connectButton" type="button">Connecter le micro:bit en USB</button>
+        <button id="disconnectButton" type="button" class="secondary" disabled>Deconnecter</button>
+      </div>
+
+      <section class="axis-controls" aria-label="Reglages des axes">
+        <h2>Manette</h2>
+        <label>
+          <input id="invertPitch" type="checkbox">
+          <span>Inverser tangage</span>
+        </label>
+        <label>
+          <input id="invertRoll" type="checkbox">
+          <span>Inverser roulis</span>
+        </label>
+        <label>
+          <input id="enableYaw" type="checkbox">
+          <span>Activer cap boussole</span>
+        </label>
+        <label class="range-control">
+          <span>Sensibilite roulis</span>
+          <input id="rollSensitivity" type="range" min="0.5" max="2" step="0.1" value="1">
+        </label>
+        <label class="range-control">
+          <span>Sensibilite tangage</span>
+          <input id="pitchSensitivity" type="range" min="0.5" max="2" step="0.1" value="1">
+        </label>
+        <label class="range-control">
+          <span>Orientation avion</span>
+          <input id="aircraftOrientation" type="range" min="-180" max="180" step="1" value="0">
+        </label>
+        <button id="centerStickButton" type="button" class="secondary compact">Recentrer manette</button>
+        <button id="resetYawButton" type="button" class="secondary compact">Recentrer cap</button>
+      </section>
+
+      <dl class="telemetry">
+        <div>
+          <dt>Etat</dt>
+          <dd id="status">En attente</dd>
+        </div>
+        <div>
+          <dt>Pitch</dt>
+          <dd id="pitchValue">0°</dd>
+        </div>
+        <div>
+          <dt>Roll</dt>
+          <dd id="rollValue">0°</dd>
+        </div>
+        <div>
+          <dt>Yaw</dt>
+          <dd id="yawValue">0°</dd>
+        </div>
+        <div>
+          <dt>Neutre</dt>
+          <dd id="neutralValue">En attente</dd>
+        </div>
+        <div>
+          <dt>Accel</dt>
+          <dd id="accelValue">x:0 y:0 z:0</dd>
+        </div>
+      </dl>
+
+      <div class="notes">
+        <p>Format attendu via port serie USB:</p>
+        <code>{"pitch":12,"roll":-8,"heading":0,"x":120,"y":-64,"z":1001}</code>
+      </div>
+    </aside>
+
+    <main class="viewer">
+      <canvas id="scene"></canvas>
+      <div class="hud">
+        <span>Roulis: <strong id="hudRoll">0°</strong></span>
+        <span>Tangage: <strong id="hudPitch">0°</strong></span>
+        <span>Cap: <strong id="hudYaw">0°</strong></span>
+      </div>
+      <div class="stick-preview" aria-label="Visualisation de la manette">
+        <div class="stick-slot">
+          <img id="stickVisual" src="./levier de commande.png" alt="">
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
