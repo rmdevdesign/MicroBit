@@ -1,4 +1,13 @@
 @echo off
 cd /d "%~dp0"
-start "" powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Milliseconds 700; Start-Process 'http://localhost:8081'"
+
+where node >nul 2>nul
+if errorlevel 1 (
+  echo Node.js est introuvable.
+  echo Installez Node.js depuis https://nodejs.org/ puis relancez ce fichier.
+  pause
+  exit /b 1
+)
+
 node server.js
+pause

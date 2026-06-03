@@ -1,21 +1,36 @@
 import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
 
-const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const UART_TX = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
-const G = 9.80665;
+const TRACK_SPEED = 1;
+const DIRECTION_SMOOTHING = 0.22;
+const HEADING_OFFSET_DEGREES = 0;
+const PITCH_SIGN = -1;
+const MOTION_SCORE_SMOOTHING = 0.35;
+const MOTION_START_THRESHOLD = 110;
+const MOTION_STOP_THRESHOLD = 55;
+const MOTION_START_SAMPLES = 2;
+const MOTION_STOP_SAMPLES = 6;
 
 const state = {
-  device: null,
-  characteristic: null,
+  port: null,
+  reader: null,
+  reading: false,
   connected: false,
+  buffer: "",
   recording: false,
   simulating: false,
-  buffer: "",
   samples: [],
   live: null,
   startedAt: 0,
   lastSampleAt: 0,
-  baseline: null,
+  lastReceivedAt: 0,
+  recordingStartedAt: 0,
+  recordingWatchdog: 0,
+  direction: null,
+  previousAcceleration: null,
+  motionScore: 0,
+  moving: false,
+  movingSamples: 0,
+  stationarySamples: 0,
   velocity: { x: 0, y: 0, z: 0 },
   position: { x: 0, y: 0, z: 0 },
   gMax: 0,
@@ -26,9 +41,11 @@ const state = {
 const ui = {
   status: document.querySelector("#status"),
   connectButton: document.querySelector("#connectButton"),
-  scanAllButton: document.querySelector("#scanAllButton"),
+  disconnectButton: document.querySelector("#disconnectButton"),
   recordButton: document.querySelector("#recordButton"),
   simulateButton: document.querySelector("#simulateButton"),
+  importButton: document.querySelector("#importButton"),
+  importFileInput: document.querySelector("#importFileInput"),
   resetButton: document.querySelector("#resetButton"),
   sampleCount: document.querySelector("#sampleCount"),
   duration: document.querySelector("#duration"),
@@ -76,28 +93,29 @@ scene.add(trackGroup);
 
 const emptyLabel = document.createElement("div");
 emptyLabel.className = "empty-label";
-emptyLabel.textContent = "Start recording ou Simulation pour tracer la trajectoire 3D";
+emptyLabel.textContent = "Connecter USB, Simulation ou Importer pour tracer la trajectoire 3D";
 document.querySelector(".visualizer").appendChild(emptyLabel);
 
 const liveMarker = createMarker();
-scene.add(liveMarker);
+trackGroup.add(liveMarker);
 
 let tubeMesh = null;
 let lineMesh = null;
 let pointCloud = null;
+let trackEndpoint = null;
 
 function createMarker() {
   const group = new THREE.Group();
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(0.45, 0.22, 0.32),
+    new THREE.BoxGeometry(0.32, 0.22, 0.45),
     new THREE.MeshStandardMaterial({ color: 0xd44f35, metalness: 0.18, roughness: 0.42 })
   );
   const nose = new THREE.Mesh(
     new THREE.ConeGeometry(0.16, 0.36, 18),
     new THREE.MeshStandardMaterial({ color: 0x0f8b8d, metalness: 0.12, roughness: 0.35 })
   );
-  nose.rotation.z = -Math.PI / 2;
-  nose.position.x = 0.4;
+  nose.rotation.x = Math.PI / 2;
+  nose.position.z = 0.4;
   group.add(body, nose);
   return group;
 }
@@ -150,21 +168,20 @@ function integrate(sample) {
   if (!state.startedAt) {
     state.startedAt = sample.t;
     state.lastSampleAt = sample.t;
-    state.baseline = { x: sample.x, y: sample.y, z: sample.z };
   }
 
   const dt = Math.min((sample.t - state.lastSampleAt) / 1000, 0.12);
   state.lastSampleAt = sample.t;
 
-  const heading = (sample.heading * Math.PI) / 180;
-  const ax = ((sample.x - state.baseline.x) / 1024) * G;
-  const ay = ((sample.y - state.baseline.y) / 1024) * G;
-  const az = ((sample.z - state.baseline.z) / 1024) * G;
-  const horizontal = rotate2d(ax, ay, heading);
-
-  state.velocity.x = state.velocity.x * 0.982 + horizontal.x * dt;
-  state.velocity.y = state.velocity.y * 0.982 + az * dt;
-  state.velocity.z = state.velocity.z * 0.982 + horizontal.y * dt;
+  const direction = smoothDirection(state.direction, directionFromOrientation(sample));
+  state.direction = direction;
+  const moving = detectMotion(state, sample);
+  const speed = moving ? TRACK_SPEED : 0;
+  state.velocity = {
+    x: direction.x * speed,
+    y: direction.y * speed,
+    z: direction.z * speed,
+  };
   state.position.x += state.velocity.x * dt;
   state.position.y += state.velocity.y * dt;
   state.position.z += state.velocity.z * dt;
@@ -175,22 +192,72 @@ function integrate(sample) {
     px: state.position.x,
     py: state.position.y,
     pz: state.position.z,
+    moving,
+    motionScore: state.motionScore,
     speed: Math.hypot(state.velocity.x, state.velocity.y, state.velocity.z),
   };
 }
 
-function rotate2d(x, y, radians) {
-  const c = Math.cos(radians);
-  const s = Math.sin(radians);
+function directionFromOrientation(sample) {
+  const heading = ((sample.heading + HEADING_OFFSET_DEGREES) * Math.PI) / 180;
+  const pitch = (sample.pitch * PITCH_SIGN * Math.PI) / 180;
+  const horizontal = Math.cos(pitch);
+
   return {
-    x: x * c - y * s,
-    y: x * s + y * c,
+    x: Math.sin(heading) * horizontal,
+    y: Math.sin(pitch),
+    z: Math.cos(heading) * horizontal,
   };
+}
+
+function smoothDirection(previous, next) {
+  if (!previous) return next;
+
+  const x = previous.x + (next.x - previous.x) * DIRECTION_SMOOTHING;
+  const y = previous.y + (next.y - previous.y) * DIRECTION_SMOOTHING;
+  const z = previous.z + (next.z - previous.z) * DIRECTION_SMOOTHING;
+  const length = Math.hypot(x, y, z) || 1;
+
+  return { x: x / length, y: y / length, z: z / length };
+}
+
+function detectMotion(motionState, sample) {
+  const previous = motionState.previousAcceleration;
+  motionState.previousAcceleration = { x: sample.x, y: sample.y, z: sample.z };
+  if (!previous) return false;
+
+  const accelerationDelta = Math.hypot(
+    sample.x - previous.x,
+    sample.y - previous.y,
+    sample.z - previous.z
+  );
+  motionState.motionScore += (accelerationDelta - motionState.motionScore) * MOTION_SCORE_SMOOTHING;
+
+  if (motionState.moving) {
+    motionState.stationarySamples = motionState.motionScore < MOTION_STOP_THRESHOLD
+      ? motionState.stationarySamples + 1
+      : 0;
+    if (motionState.stationarySamples >= MOTION_STOP_SAMPLES) {
+      motionState.moving = false;
+      motionState.movingSamples = 0;
+    }
+  } else {
+    motionState.movingSamples = motionState.motionScore > MOTION_START_THRESHOLD
+      ? motionState.movingSamples + 1
+      : 0;
+    if (motionState.movingSamples >= MOTION_START_SAMPLES) {
+      motionState.moving = true;
+      motionState.stationarySamples = 0;
+    }
+  }
+
+  return motionState.moving;
 }
 
 function handleSample(payload) {
   const sample = integrate(normalizePayload(payload));
   state.live = sample;
+  state.lastReceivedAt = performance.now();
   state.gMax = Math.max(state.gMax, sample.g);
 
   if (state.recording) {
@@ -206,94 +273,150 @@ function parseLine(line) {
   if (!trimmed) return;
 
   try {
-    handleSample(JSON.parse(trimmed));
-    setStatus(state.recording ? "Recording en cours" : "Flux Bluetooth actif");
+    handleSample(parseTelemetryLine(trimmed));
+    setStatus(state.recording ? "Recording en cours" : "Flux USB actif");
   } catch {
     setStatus(`Trame ignoree: ${trimmed}`, true);
   }
 }
 
-function handleBluetoothValue(event) {
-  state.buffer += decoder.decode(event.target.value, { stream: true });
+function parseTelemetryLine(line) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    const fallback = parseLooseTelemetryLine(line);
+    if (fallback) return fallback;
+    throw new Error("Invalid telemetry line");
+  }
+}
+
+function parseLooseTelemetryLine(line) {
+  const aliases = {
+    x: ["x"],
+    y: ["y"],
+    z: ["z"],
+    pitch: ["pitch", "pich"],
+    roll: ["roll", "rol"],
+    heading: ["heading", "hedin"],
+  };
+  const result = {};
+
+  for (const [key, names] of Object.entries(aliases)) {
+    const value = findLooseNumber(line, names);
+    if (value === null) return null;
+    result[key] = value;
+  }
+
+  return result;
+}
+
+function findLooseNumber(line, names) {
+  for (const name of names) {
+    const pattern = new RegExp(`["']?${name}["']?\\s*:?\\s*(-?\\d+(?:\\.\\d+)?)`, "i");
+    const match = line.match(pattern);
+    if (match) return Number(match[1]);
+  }
+
+  return null;
+}
+
+function handleSerialChunk(value) {
+  state.buffer += decoder.decode(value, { stream: true });
   const lines = state.buffer.split(/\r?\n/);
   state.buffer = lines.pop() || "";
   lines.forEach(parseLine);
 }
 
-async function connectMicrobit(scanAllDevices = false) {
-  if (!navigator.bluetooth) {
-    setStatus("Web Bluetooth non disponible. Utiliser Chrome ou Edge.", true);
+async function connectMicrobitUsb() {
+  if (!navigator.serial) {
+    setStatus("Web Serial non disponible. Utilise Chrome ou Edge.", true);
     return;
   }
 
   try {
-    setStatus("Selection BLE: choisis le micro:bit dans la liste.");
-    const requestOptions = scanAllDevices
-      ? {
-          acceptAllDevices: true,
-          optionalServices: [UART_SERVICE],
-        }
-      : {
-          filters: [
-            { namePrefix: "BBC micro:bit" },
-            { namePrefix: "micro:bit" },
-            { namePrefix: "Micro:bit" },
-          ],
-          optionalServices: [UART_SERVICE],
-        };
-    const device = await navigator.bluetooth.requestDevice(requestOptions);
+    setStatus("Selection du port USB micro:bit...");
+    ui.connectButton.disabled = true;
 
-    device.addEventListener("gattserverdisconnected", onDisconnected);
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(UART_SERVICE);
-    const tx = await service.getCharacteristic(UART_TX);
-    await tx.startNotifications();
-    tx.addEventListener("characteristicvaluechanged", handleBluetoothValue);
+    state.port = await navigator.serial.requestPort({
+      filters: [
+        { usbVendorId: 0x0d28 },
+        { usbVendorId: 0x1366 },
+      ],
+    });
+    await state.port.open({ baudRate: 115200 });
 
-    state.device = device;
-    state.characteristic = tx;
     state.connected = true;
+    state.reading = true;
     state.buffer = "";
-    ui.connectButton.textContent = "Deconnecter";
+    ui.disconnectButton.disabled = false;
     ui.recordButton.disabled = false;
-    setStatus(`Connecte a ${device.name || "micro:bit"}. Pret a enregistrer.`);
+    setStatus("Connecte en USB. En attente de trames...");
+
+    state.reader = state.port.readable.getReader();
+    while (state.reading) {
+      const { value, done } = await state.reader.read();
+      if (done) break;
+      if (value) handleSerialChunk(value);
+    }
   } catch (error) {
-    const message = error?.message || "Connexion Bluetooth impossible";
-    if (message.includes("No Services matching UUID")) {
-      setStatus("Micro:bit visible, mais service UART absent. Quitte le mode appairage et redemarre le programme MakeCode flashe avec bluetooth.startUartService().", true);
-      return;
+    if (state.reading) {
+      setStatus(error?.message || "Connexion USB impossible", true);
+    } else {
+      setStatus(error?.name === "NotFoundError" ? "Selection USB annulee" : error?.message || "Connexion USB impossible", true);
     }
-    if (message.includes("GATT Error: Not supported")) {
-      setStatus("GATT non supporte: oublie le micro:bit dans Windows Bluetooth, active No Pairing Required dans MakeCode, reflashe, puis redemarre normalement.", true);
-      return;
+  } finally {
+    if (!state.connected) {
+      ui.connectButton.disabled = false;
+      ui.disconnectButton.disabled = true;
+      ui.recordButton.disabled = !state.simulating;
     }
-    setStatus(`${message}. Utilise le micro:bit en mode programme, pas le mode A+B+reset.`, true);
   }
 }
 
-function disconnectMicrobit() {
-  if (state.characteristic) {
-    state.characteristic.removeEventListener("characteristicvaluechanged", handleBluetoothValue);
+async function disconnectMicrobitUsb() {
+  state.reading = false;
+
+  if (state.reader) {
+    try {
+      await state.reader.cancel();
+    } catch {
+      // Ignore cleanup failures.
+    }
+    try {
+      state.reader.releaseLock();
+    } catch {
+      // Ignore cleanup failures.
+    }
   }
 
-  if (state.device?.gatt?.connected) {
-    state.device.gatt.disconnect();
+  if (state.port) {
+    try {
+      await state.port.close();
+    } catch {
+      // Ignore cleanup failures.
+    }
   }
 
-  onDisconnected();
-}
-
-function onDisconnected() {
+  state.port = null;
+  state.reader = null;
   state.connected = false;
-  state.device = null;
-  state.characteristic = null;
-  ui.connectButton.textContent = "Connecter micro:bit";
+  state.buffer = "";
+  ui.connectButton.disabled = false;
+  ui.disconnectButton.disabled = true;
   ui.recordButton.disabled = !state.simulating;
-  if (!state.simulating) setStatus("Deconnecte");
+  setStatus("Deconnecte");
 }
 
 function toggleRecording() {
+  if (!state.connected && !state.simulating) {
+    setStatus("Connecte le micro:bit en USB, lance Simulation, ou importe un fichier JSON/CSV.", true);
+    return;
+  }
+
   state.recording = !state.recording;
+  state.recordingStartedAt = state.recording ? performance.now() : 0;
+  window.clearTimeout(state.recordingWatchdog);
+  state.recordingWatchdog = 0;
   ui.recordButton.textContent = state.recording ? "Stop recording" : "Start recording";
   ui.recordButton.classList.toggle("is-recording", state.recording);
 
@@ -301,23 +424,37 @@ function toggleRecording() {
     resetMotionOnly();
   }
 
-  setStatus(state.recording ? "Recording en cours" : "Recording stoppe");
+  if (state.recording) {
+    setStatus(state.simulating && !state.connected ? "Recording simulation en cours" : "Recording USB en cours");
+  } else {
+    setStatus("Recording stoppe");
+  }
   updateUi();
 }
 
 function resetMotionOnly() {
   state.startedAt = 0;
   state.lastSampleAt = 0;
-  state.baseline = null;
+  state.direction = null;
+  state.previousAcceleration = null;
+  state.motionScore = 0;
+  state.moving = false;
+  state.movingSamples = 0;
+  state.stationarySamples = 0;
   state.velocity = { x: 0, y: 0, z: 0 };
   state.position = { x: 0, y: 0, z: 0 };
 }
 
 function resetRecording() {
   state.samples = [];
+  if (!state.simulating) state.live = null;
   resetMotionOnly();
+  trackEndpoint = null;
   state.gMax = 0;
   state.recording = false;
+  state.recordingStartedAt = 0;
+  window.clearTimeout(state.recordingWatchdog);
+  state.recordingWatchdog = 0;
   state.renderVersion += 1;
   ui.recordButton.textContent = "Start recording";
   ui.recordButton.classList.remove("is-recording");
@@ -349,8 +486,11 @@ function toggleSimulation() {
     setStatus("Simulation active");
   } else {
     window.clearInterval(simulationTimer);
-    if (!state.connected) ui.recordButton.disabled = true;
-    setStatus(state.connected ? "Connecte" : "Pret");
+    state.recording = false;
+    ui.recordButton.textContent = "Start recording";
+    ui.recordButton.classList.remove("is-recording");
+    ui.recordButton.disabled = !state.connected;
+    setStatus(state.connected ? "Connecte en USB" : "Pret");
   }
 }
 
@@ -385,11 +525,13 @@ function rebuildTrack() {
   tubeMesh = null;
   lineMesh = null;
   pointCloud = null;
+  trackEndpoint = null;
 
   if (state.samples.length < 2) return;
 
   const points = normalizeTrackPoints(state.samples);
   const curve = new THREE.CatmullRomCurve3(points, false, "centripetal", 0.42);
+  trackEndpoint = curve.getPoint(1);
   const tubeGeometry = new THREE.TubeGeometry(curve, Math.max(32, points.length * 2), 0.075, 10, false);
   const tubeMaterial = new THREE.MeshStandardMaterial({
     color: 0xd44f35,
@@ -435,12 +577,15 @@ function updateLiveMarker() {
   }
 
   liveMarker.visible = true;
-  const points = normalizeTrackPoints(state.samples.length ? state.samples : [source]);
-  const point = points[points.length - 1] || new THREE.Vector3();
-  liveMarker.position.copy(point);
+  if (state.samples.length > 1 && trackEndpoint) {
+    liveMarker.position.copy(trackEndpoint);
+  } else {
+    const points = normalizeTrackPoints(state.samples.length ? state.samples : [source]);
+    liveMarker.position.copy(points[points.length - 1] || new THREE.Vector3());
+  }
   liveMarker.rotation.set(
-    THREE.MathUtils.degToRad(source.pitch),
-    THREE.MathUtils.degToRad(source.heading),
+    THREE.MathUtils.degToRad(-source.pitch * PITCH_SIGN),
+    THREE.MathUtils.degToRad(source.heading + HEADING_OFFSET_DEGREES),
     THREE.MathUtils.degToRad(-source.roll)
   );
 }
@@ -496,7 +641,7 @@ function exportJson() {
 }
 
 function exportCsv() {
-  const header = "relTime,x,y,z,pitch,roll,heading,g,px,py,pz,speed";
+  const header = "relTime,x,y,z,pitch,roll,heading,g,px,py,pz,moving,motionScore,speed";
   const rows = state.samples.map((sample) => [
     sample.relTime.toFixed(3),
     sample.x,
@@ -509,9 +654,150 @@ function exportCsv() {
     sample.px.toFixed(4),
     sample.py.toFixed(4),
     sample.pz.toFixed(4),
+    sample.moving ? 1 : 0,
+    sample.motionScore.toFixed(2),
     sample.speed.toFixed(4),
   ].join(","));
   download("bezier-follow-recording.csv", [header, ...rows].join("\n"), "text/csv");
+}
+
+function importRecording() {
+  ui.importFileInput.click();
+}
+
+async function handleImportFile(event) {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const imported = file.name.toLowerCase().endsWith(".csv")
+      ? parseCsvRecording(text)
+      : parseJsonRecording(text);
+
+    loadImportedSamples(imported);
+    setStatus(`${imported.length} samples importes`);
+  } catch (error) {
+    setStatus(error?.message || "Import impossible", true);
+  }
+}
+
+function parseJsonRecording(text) {
+  const parsed = JSON.parse(text);
+  const rows = Array.isArray(parsed) ? parsed : parsed.samples;
+  if (!Array.isArray(rows)) throw new Error("JSON invalide: tableau de samples attendu.");
+  return rows.map((row) => normalizeImportedRow(row));
+}
+
+function parseCsvRecording(text) {
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (lines.length < 2) throw new Error("CSV invalide: en-tete et lignes attendus.");
+
+  const headers = lines[0].split(",").map((header) => header.trim());
+  return lines.slice(1).map((line) => {
+    const values = line.split(",");
+    const row = Object.fromEntries(headers.map((header, index) => [header, values[index]]));
+    return normalizeImportedRow(row);
+  });
+}
+
+function normalizeImportedRow(row) {
+  const relTime = Number(row.relTime ?? row.t ?? 0);
+  const px = Number(row.px);
+  const py = Number(row.py);
+  const pz = Number(row.pz);
+  const motionScore = Number(row.motionScore);
+
+  return {
+    relTime: Number.isFinite(relTime) ? relTime : 0,
+    x: Number(row.x) || 0,
+    y: Number(row.y) || 0,
+    z: Number(row.z) || 0,
+    pitch: Number(row.pitch) || 0,
+    roll: Number(row.roll) || 0,
+    heading: Number(row.heading) || 0,
+    g: Number(row.g) || Math.hypot(Number(row.x) || 0, Number(row.y) || 0, Number(row.z) || 0) / 1024,
+    px: Number.isFinite(px) ? px : null,
+    py: Number.isFinite(py) ? py : null,
+    pz: Number.isFinite(pz) ? pz : null,
+    moving: row.moving === true || row.moving === "true" || Number(row.moving) === 1,
+    motionScore: Number.isFinite(motionScore) ? motionScore : null,
+    speed: Number(row.speed) || 0,
+  };
+}
+
+function loadImportedSamples(samples) {
+  if (!samples.length) throw new Error("Aucun sample a importer.");
+  state.samples = completeImportedMotion(samples);
+  state.live = state.samples[state.samples.length - 1];
+  state.gMax = Math.max(...state.samples.map((sample) => sample.g || 0));
+  state.recording = false;
+  state.simulating = false;
+  window.clearInterval(simulationTimer);
+  state.connected = Boolean(state.port);
+  ui.simulateButton.textContent = "Simulation";
+  ui.recordButton.textContent = "Start recording";
+  ui.recordButton.classList.remove("is-recording");
+  ui.recordButton.disabled = !state.connected;
+  state.renderVersion += 1;
+  updateUi();
+}
+
+function completeImportedMotion(samples) {
+  const hasPositions = samples.some((sample) => sample.px || sample.py || sample.pz)
+    && samples.every((sample) => Number.isFinite(sample.motionScore));
+  if (hasPositions) {
+    return samples.map((sample) => ({
+      ...sample,
+      px: sample.px || 0,
+      py: sample.py || 0,
+      pz: sample.pz || 0,
+    }));
+  }
+
+  let direction = null;
+  const motionState = {
+    previousAcceleration: null,
+    motionScore: 0,
+    moving: false,
+    movingSamples: 0,
+    stationarySamples: 0,
+  };
+  let velocity = { x: 0, y: 0, z: 0 };
+  let position = { x: 0, y: 0, z: 0 };
+  let previousTime = samples[0].relTime || 0;
+
+  return samples.map((sample, index) => {
+    const relTime = sample.relTime || index * 0.05;
+    const dt = Math.min(Math.max(relTime - previousTime, 0.05), 0.12);
+    previousTime = relTime;
+
+    direction = smoothDirection(direction, directionFromOrientation(sample));
+    const moving = detectMotion(motionState, sample);
+    const speed = moving ? TRACK_SPEED : 0;
+    velocity = {
+      x: direction.x * speed,
+      y: direction.y * speed,
+      z: direction.z * speed,
+    };
+    position = {
+      x: position.x + velocity.x * dt,
+      y: position.y + velocity.y * dt,
+      z: position.z + velocity.z * dt,
+    };
+
+    return {
+      ...sample,
+      relTime,
+      px: position.x,
+      py: position.y,
+      pz: position.z,
+      moving,
+      motionScore: motionState.motionScore,
+      speed: Math.hypot(velocity.x, velocity.y, velocity.z),
+    };
+  });
 }
 
 function loop() {
@@ -524,15 +810,12 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-ui.connectButton.addEventListener("click", () => {
-  if (state.connected) disconnectMicrobit();
-  else connectMicrobit(false);
-});
-ui.scanAllButton.addEventListener("click", () => {
-  if (!state.connected) connectMicrobit(true);
-});
+ui.connectButton.addEventListener("click", connectMicrobitUsb);
+ui.disconnectButton.addEventListener("click", disconnectMicrobitUsb);
 ui.recordButton.addEventListener("click", toggleRecording);
 ui.simulateButton.addEventListener("click", toggleSimulation);
+ui.importButton.addEventListener("click", importRecording);
+ui.importFileInput.addEventListener("change", handleImportFile);
 ui.resetButton.addEventListener("click", resetRecording);
 ui.downloadJsonButton.addEventListener("click", exportJson);
 ui.downloadCsvButton.addEventListener("click", exportCsv);

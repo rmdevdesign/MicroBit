@@ -196,7 +196,7 @@ dt {
   gap: 10px;
 }
 
-.controls button:first-child,
+.controls #connectButton,
 .controls .record {
   grid-column: span 2;
 }
@@ -275,7 +275,7 @@ dd {
     grid-template-columns: 1fr;
   }
 
-  .controls button:first-child,
+  .controls #connectButton,
   .controls .record {
     grid-column: auto;
   }

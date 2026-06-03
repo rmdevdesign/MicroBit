@@ -1,61 +1,72 @@
 # Bezier Follow
 
-Application web separee pour enregistrer un wagon de grand 8 miniature avec un micro:bit en Bluetooth, puis visualiser la trajectoire relative sous forme de spline 3D.
+Application web locale pour enregistrer les donnees d'un micro:bit en USB serie, puis visualiser la forme relative du parcours sous forme de spline 3D.
+
+Le Bluetooth a ete retire du projet: le micro:bit reste la source des inputs, mais la connexion passe par le cable USB pour fonctionner de maniere fiable sur macOS et Windows.
 
 ## Lancer
 
 Sur Windows, double-cliquer sur `launch.bat`.
 
-La page s'ouvre sur `http://localhost:8081`. Chrome ou Edge sont recommandes pour Web Bluetooth.
+Sur macOS, lancer dans Terminal:
+
+```bash
+chmod +x launch-mac.command
+./launch-mac.command
+```
+
+La page s'ouvre automatiquement sur `http://localhost:8081` ou sur le port libre suivant. Utiliser Chrome ou Edge pour Web Serial.
 
 ## Programmer le micro:bit
 
 1. Ouvrir `https://makecode.microbit.org/`.
 2. Creer un projet.
-3. Aller dans `Extensions`, chercher `Bluetooth`, puis ajouter l'extension Bluetooth.
-4. Accepter que MakeCode retire l'extension `Radio` si la fenetre le demande.
-5. Aller dans la roue dentee, puis `Project Settings`.
-6. Activer `No Pairing Required: Anyone can connect via Bluetooth`.
-7. Passer en JavaScript.
-8. Coller le contenu de `microbit-makecode.ts`.
-9. Telecharger le `.hex` et le glisser sur le lecteur `MICROBIT` avec le cable USB.
-10. Deconnecter/reconnecter l'alimentation du micro:bit pour redemarrer le programme.
+3. Passer en JavaScript.
+4. Coller le contenu de `microbit-makecode.ts`.
+5. Telecharger le `.hex`.
+6. Glisser le `.hex` sur le lecteur `MICROBIT`.
+7. Laisser le micro:bit branche en USB pour envoyer les donnees a l'app.
 
-Le programme envoie une ligne JSON toutes les 50 ms via le service Bluetooth UART:
+Le programme envoie une ligne JSON toutes les 50 ms par USB serie:
 
 ```json
 {"x":12,"y":-8,"z":1010,"pitch":4,"roll":-2,"heading":180}
 ```
 
-## Utilisation Bluetooth
+## Utilisation
 
-1. Ouvrir la page depuis `launch.bat`.
-2. Le micro:bit affiche son nom de 5 lettres au demarrage. Appuyer sur `A` pour le revoir.
-3. Cliquer sur `Connecter micro:bit`.
-4. Choisir l'appareil qui ressemble a `BBC micro:bit [xxxxx]`, `micro:bit [xxxxx]`, ou au nom de 5 lettres affiche sur les LEDs.
-5. Si rien ne ressemble a ca, cliquer sur `Scan complet`, puis chercher le nom de 5 lettres affiche par le micro:bit.
-6. Cliquer sur `Start recording`.
-7. Lancer le wagon.
-8. Cliquer sur `Stop recording`.
-9. Exporter en JSON ou CSV si besoin.
+1. Lancer l'app depuis `launch.bat` sur Windows ou `launch-mac.command` sur macOS.
+2. Cliquer sur `Connecter USB micro:bit`.
+3. Choisir le port du micro:bit dans Chrome/Edge.
+4. Cliquer sur `Start recording`.
+5. Bouger le micro:bit ou lancer le wagon.
+6. Cliquer sur `Stop recording`.
+7. Exporter en JSON ou CSV si besoin.
 
-Le bouton `Simulation` permet de tester l'interface 3D sans micro:bit.
+Le bouton `Simulation` permet de tester l'interface sans micro:bit. Le bouton `Importer` recharge un export JSON/CSV ou des donnees brutes compatibles.
 
-## Si le Bluetooth ne se connecte pas
+## Comment la courbe est calculee
 
-- Utiliser Chrome ou Edge, pas Firefox.
-- Ouvrir la page depuis `http://localhost:8081`, pas depuis le fichier `index.html`.
-- Flasher le programme par USB au moins une fois apres avoir ajoute l'extension Bluetooth.
-- Verifier que `No Pairing Required` est active dans MakeCode.
-- Ne pas rester en mode appairage `A+B+reset` pour utiliser l'app. Ce mode peut etre visible par Chrome, mais il n'expose pas le service UART du programme.
-- Apres appairage/flash, redemarrer normalement le micro:bit sans maintenir de bouton. Le programme doit afficher le nom de 5 lettres, puis envoyer l'UART.
-- Fermer les applis qui peuvent deja etre connectees au micro:bit.
-- Redemarrer le micro:bit apres le flash.
-- Appuyer sur `A` sur le micro:bit pour afficher son nom de 5 lettres, puis chercher ce nom dans la liste.
-- Si le micro:bit n'apparait toujours pas, supprimer l'ancien pairing Windows dans les parametres Bluetooth, puis reessayer.
+La courbe utilise `heading` et `pitch` pour avancer dans la direction du wagon. `roll` sert uniquement a orienter le marqueur du wagon.
 
-La procedure `A+B+reset` de la documentation micro:bit sert surtout a appairer. Pour cette app web, le navigateur doit se connecter au micro:bit quand le programme MakeCode tourne normalement et expose `bluetooth.startUartService()`.
+L'acceleration sert a detecter si le wagon bouge: la courbe avance a vitesse relative constante uniquement pendant les phases de mouvement. Les exports contiennent `moving` et `motionScore` pour verifier cette detection.
+
+Monter le micro:bit a plat sur le wagon, avec son bord USB dirige vers l'avant. Si les montees et descentes sont inversees, changer `PITCH_SIGN` de `-1` a `1` dans `app.js`. Si le wagon est monte dans une autre direction horizontale, ajuster `HEADING_OFFSET_DEGREES`.
+
+Le compas doit etre calibre et peut etre perturbe par un rail ou un chassis metallique.
+
+## Si l'USB ne se connecte pas
+
+- Utiliser Chrome ou Edge, pas Firefox/Safari.
+- Ouvrir la page depuis `http://localhost:8081` ou le port affiche dans le terminal, pas depuis le fichier `index.html`.
+- Verifier que le micro:bit est branche avec un cable USB data, pas seulement charge.
+- Fermer MakeCode Serial Monitor ou toute app qui utilise deja le port serie.
+- Deconnecter/reconnecter le micro:bit, puis cliquer a nouveau sur `Connecter USB micro:bit`.
 
 ## Limite importante
 
-Le micro:bit donne surtout une acceleration et une orientation. La trajectoire 3D affichee est une reconstruction relative par integration de l'acceleration, pas une position absolue precise. Pour une trajectoire metrique fiable, il faudrait ajouter une reference externe: camera, balises, encodeur sur rail, ou correction par points connus.
+La trajectoire 3D represente la forme relative du parcours, pas une position absolue ni une distance metrique precise. Les accelerations restent affichees et exportees, mais elles ne sont pas integrees pour dessiner la courbe: la double integration derive tres vite et la gravite change d'axe lorsque le wagon s'incline.
+
+Un mouvement parfaitement regulier, sans vibration ni changement d'acceleration, ne peut pas etre distingue de l'immobilite avec le micro:bit seul. Pour ce cas, il faut ajouter un encodeur, un capteur de passage ou une autre reference externe.
+
+Pour une trajectoire metrique fiable, il faudrait ajouter une reference externe: camera, balises, encodeur sur rail, ou correction par points connus.
