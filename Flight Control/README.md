@@ -41,8 +41,9 @@ Ne pas ouvrir `index.html` directement : `Web Serial` fonctionne de maniere fiab
 
 Option rapide si le fichier est present dans le dossier :
 
-1. Glisser `microbit-FlightControl.hex` sur le lecteur `MICROBIT`
-2. Attendre que le micro:bit redemarre
+1. Depuis l'interface web, cliquer sur `Telecharger le fichier .hex`
+2. Glisser `microbit-FlightControl.hex` sur le lecteur `MICROBIT`
+3. Attendre que le micro:bit redemarre
 
 Le fichier `.hex` disparait du lecteur `MICROBIT` apres la copie : c'est normal, le programme a ete installe.
 

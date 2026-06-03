@@ -65,7 +65,8 @@ h1 {
   flex-wrap: wrap;
 }
 
-button {
+button,
+.button-link {
   appearance: none;
   border: 0;
   border-radius: 999px;
@@ -75,6 +76,11 @@ button {
   color: #03131c;
   background: linear-gradient(135deg, var(--accent), #9ff4ff);
   cursor: pointer;
+}
+
+.button-link {
+  display: inline-block;
+  text-decoration: none;
 }
 
 button.secondary {
@@ -91,6 +97,29 @@ button.compact {
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.firmware-card {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: rgba(103, 214, 255, 0.06);
+}
+
+.firmware-card h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.firmware-card p {
+  margin: 0.65rem 0 1rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.firmware-card code {
+  display: inline;
 }
 
 .axis-controls {
