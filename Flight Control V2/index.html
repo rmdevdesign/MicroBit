@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canadair Flight Control V2</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="sim">
+    <canvas id="scene" aria-label="Simulation cockpit canadair"></canvas>
+
+    <!-- Top mission HUD -->
+    <section class="top-hud" aria-label="Mission">
+
+      <div class="hud-chip mission-chip">
+        <span class="label">Mission</span>
+        <strong id="missionLabel">Ecoper sur le lac</strong>
+      </div>
+
+      <div class="hud-chip" id="ringsChip" data-mission="water">
+        <span class="label">Progression</span>
+        <div class="ring-dots" id="ringDots">
+          <i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <strong id="ringLabel">0 / 6</strong>
+      </div>
+
+      <div class="hud-chip tank-chip">
+        <span class="label">Reservoir</span>
+        <strong id="tankLabel">Vide</strong>
+      </div>
+
+      <div class="hud-chip score-chip">
+        <span class="label">Score</span>
+        <strong id="scoreLabel">0</strong>
+      </div>
+
+    </section>
+
+    <!-- Left side panel -->
+    <section class="side-panel" aria-label="Commandes">
+      <p class="eyebrow">Flight Control V2</p>
+      <h1>Canadair CL-415</h1>
+      <p class="tagline">
+        Suis les <span class="water-text">anneaux bleus</span> sur le lac pour remplir le reservoir,
+        puis suis les <span class="fire-text">anneaux rouges</span> et largue sur l'incendie.
+      </p>
+      <div class="actions">
+        <button id="connectButton" type="button" class="primary">Connecter micro:bit USB</button>
+        <button id="disconnectButton" type="button" class="secondary" disabled>Deconnecter</button>
+      </div>
+      <button id="resetButton" type="button" class="secondary btn-reset">Relancer la mission</button>
+
+      <dl class="data-list">
+        <div class="data-row"><dt>Etat</dt><dd id="status">Simulation clavier prete</dd></div>
+        <div class="data-row"><dt>Altitude</dt><dd id="altitudeLabel">0 m</dd></div>
+        <div class="data-row"><dt>Vitesse</dt><dd id="speedLabel">0 km/h</dd></div>
+        <div class="data-row"><dt>Cap</dt><dd id="headingLabel">0°</dd></div>
+        <div class="data-row"><dt>Gouvernail</dt><dd id="rudderLabel">0%</dd></div>
+      </dl>
+    </section>
+
+    <!-- Bottom instruments -->
+    <section class="bottom-hud" aria-label="Instruments">
+      <div class="instrument">
+        <span>Pitch</span>
+        <strong id="pitchLabel">0°</strong>
+      </div>
+
+      <div class="instrument">
+        <span>Roulis</span>
+        <strong id="rollLabel">0°</strong>
+      </div>
+
+      <div class="instrument horizon-instrument" aria-label="Horizon artificiel">
+        <div id="attitudeBar"></div>
+      </div>
+
+      <div class="instrument compass-instrument">
+        <span>Anneau</span>
+        <div class="compass-dial">
+          <div class="compass-needle" id="compassNeedle"></div>
+        </div>
+        <strong id="ringDist">---</strong>
+      </div>
+    </section>
+
+    <div class="controls-hint">
+      Z / Haut : monter &nbsp;·&nbsp; S / Bas : descendre<br>
+      Q / Gauche &nbsp;·&nbsp; D / Droite : virer<br>
+      Espace : larguer l'eau
+    </div>
+
+    <!-- Cockpit windshield overlay -->
+    <img id="cockpitOverlay" src="./winshield.png" hidden alt="">
+
+    <!-- Propeller overlay -->
+    <div id="propellerWrap" hidden>
+      <img src="./helices.png" id="propellerImg" alt="">
+    </div>
+
+    <!-- Mission complete overlay -->
+    <div class="mission-overlay" id="missionOverlay" hidden>
+      <div class="mission-card">
+        <div class="mission-badge">✓</div>
+        <p class="card-eyebrow">Mission accomplie</p>
+        <h2>Incendie maitrise !</h2>
+        <p class="card-sub">Le feu est eteint. Bon travail, pilote.</p>
+        <div class="final-score" id="finalScore">Score : 0</div>
+        <button id="overlayReset" type="button" class="primary">Rejouer</button>
+      </div>
+    </div>
+
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

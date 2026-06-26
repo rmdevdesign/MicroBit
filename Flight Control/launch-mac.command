@@ -1,9 +1,12 @@
 #!/bin/bash
 cd "$(dirname "$0")" || exit 1
 
+# Finder ne charge pas toujours le PATH configure dans le shell utilisateur.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js est introuvable."
-  echo "Installez Node.js depuis https://nodejs.org/ puis relancez ce fichier."
+  echo "Installez Node.js depuis https://nodejs.org/ ou avec Homebrew, puis relancez ce fichier."
   read -r -p "Appuyez sur Entree pour fermer..."
   exit 1
 fi
