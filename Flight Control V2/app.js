@@ -1,5 +1,9 @@
 import * as THREE from "three";
 import * as BufferGeometryUtils from "three/addons/utils/BufferGeometryUtils.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
 // ── Cockpit mode ─────────────────────────────────────────────────────────────
 // true  → overlay PNG winshield.png (2D, mix-blend-mode multiply)
@@ -27,7 +31,11 @@ const state = {
   speed: BASE_SPEED,
   position: new THREE.Vector3(-115, 24, 100),
   mission: "water", activeRing: 0, score: 0,
-  tankFull: false, dropArmed: false,
+  tank: 0, dropArmed: false,
+  fireIntensity: 1, lastDouse: -1e9,
+  landed: false,
+  scooping: false, dropping: false, shake: 0,
+  startTime: performance.now(), elapsed: 0,
   stickNeutral: null, centerStickRequested: true,
 };
 
@@ -54,6 +62,8 @@ const ui = {
   missionOverlay:   document.querySelector("#missionOverlay"),
   finalScore:       document.querySelector("#finalScore"),
   overlayReset:     document.querySelector("#overlayReset"),
+  timeLabel:        document.querySelector("#timeLabel"),
+  soundButton:      document.querySelector("#soundButton"),
 };
 
 const canvas   = document.querySelector("#scene");
@@ -69,6 +79,13 @@ scene.fog   = new THREE.FogExp2(0xc9dfee, 0.0026);
 
 const camera  = new THREE.PerspectiveCamera(67, 1, 0.1, 1400);
 const decoder = new TextDecoder();
+
+// Post-processing : bloom subtil sur feu / soleil / reflets
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(1280, 720), 0.38, 0.55, 0.88);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
 
 const world = new THREE.Group();
 scene.add(world);
@@ -165,6 +182,7 @@ function buildClouds() {
       puff.position.set((Math.random()-0.5)*40*s, (Math.random()-0.5)*7, (Math.random()-0.5)*18*s);
       const ps = (16 + Math.random() * 18) * s;
       puff.scale.set(ps * (1.3 + Math.random() * 0.5), ps * 0.62, 1);
+      puff.renderOrder = 2;
       cloud.add(puff);
     }
     cloud.userData.baseX = x;
@@ -338,10 +356,19 @@ const paths = {
 const FLAME_A = new THREE.Color(0xfff3b0);
 const FLAME_B = new THREE.Color(0xff7a1e);
 const FLAME_C = new THREE.Color(0xb01e00);
-const SMOKE_A = new THREE.Color(0x26282a);
-const SMOKE_B = new THREE.Color(0x6f7276);
+const SMOKE_A = new THREE.Color(0x17181a);
+const SMOKE_B = new THREE.Color(0x46494d);
+
+const FIRE_CENTER   = new THREE.Vector3(-82, 12, -44);
+const RUNWAY_CENTER = new THREE.Vector3(-108, 5, 88);
+
+// WebAudio state (declared before the first animate() frame — see updateAudio)
+const audio = { ctx: null, master: null, muted: false, nodes: {}, noiseBuffer: null };
 
 let aircraft, cockpit, propeller, waterRibbon, fireSystem;
+let worldDrops, landingBeacon, windsock;
+let propImg = null, propAngle = 0;
+const birdFlocks = [];
 let lastFrame = performance.now();
 const forwardDirection = new THREE.Vector3();
 
@@ -372,14 +399,18 @@ function buildWorld() {
   world.add(terrain);
 
   // Ocean + lake (animated shader water)
+  // renderOrder 1 : l'eau se dessine avant les sprites (feu, fumee, nuages, renderOrder 2)
+  // sinon le tri par distance fait passer l'ocean devant eux de loin
   const ocean = new THREE.Mesh(new THREE.PlaneGeometry(2600, 2600), createWaterMaterial(0x0d4a6e, 0x2f9dc0));
   ocean.rotation.x = -Math.PI / 2;
   ocean.position.y = -0.75;
+  ocean.renderOrder = 1;
   world.add(ocean);
 
   const lake = new THREE.Mesh(new THREE.CircleGeometry(66, 72), createWaterMaterial(0x156f92, 0x49c2dc));
   lake.rotation.x = -Math.PI / 2;
   lake.position.set(8, 0.12, -8);
+  lake.renderOrder = 1;
   world.add(lake);
 
   // Distant hazy islands on the horizon
@@ -444,6 +475,110 @@ function buildWorld() {
 
   scatterVegetation();
   scatterRocks();
+  buildWaterDrops();
+  buildLandingBeacon();
+  buildExtras();
+}
+
+// Pool of world-space water drops (ballistic, for aimed drops)
+function buildWaterDrops() {
+  worldDrops = new THREE.Group();
+  const tex = makeParticleTexture();
+  for (let i = 0; i < 130; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, color: 0xaadeff, transparent: true, opacity: 0.75, depthWrite: false,
+    }));
+    s.visible = false;
+    s.renderOrder = 2;
+    s.userData = { active: false, vel: new THREE.Vector3() };
+    worldDrops.add(s);
+  }
+  world.add(worldDrops);
+}
+
+// Green landing gate over the runway, shown during the "land" phase
+function buildLandingBeacon() {
+  landingBeacon = new THREE.Group();
+  const mat  = new THREE.MeshBasicMaterial({ color: 0x3dff88, transparent: true, opacity: 0.85 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(RING_RADIUS + 1, 0.3, 12, 48), mat);
+  ring.position.set(-108, 7, 88);
+  ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(RW_DIR.x, 0, RW_DIR.z));
+  landingBeacon.add(ring);
+  const gr = new THREE.Mesh(
+    new THREE.RingGeometry(6, 8, 40),
+    new THREE.MeshBasicMaterial({ color: 0x3dff88, transparent: true, opacity: 0.35, side: THREE.DoubleSide })
+  );
+  gr.rotation.x = -Math.PI / 2;
+  gr.position.set(-108, 0.72, 88);
+  landingBeacon.add(gr);
+  landingBeacon.visible = false;
+  landingBeacon.traverse((o) => { o.renderOrder = 2; });
+  world.add(landingBeacon);
+}
+
+// Birds, sail boats, windsock — living scenery
+function buildExtras() {
+  const wingGeo = new THREE.PlaneGeometry(1.6, 0.5);
+  wingGeo.rotateX(-Math.PI / 2);
+  const birdMat = new THREE.MeshBasicMaterial({ color: 0x1d2226, side: THREE.DoubleSide });
+  [[8, 34, -8, 46], [-60, 30, -60, 38]].forEach(([cx, cy, cz, radius]) => {
+    const flock = new THREE.Group();
+    flock.position.set(cx, cy, cz);
+    for (let i = 0; i < 7; i++) {
+      const bird = new THREE.Group();
+      const wl = new THREE.Mesh(wingGeo, birdMat); wl.position.x = -0.8;
+      const wr = new THREE.Mesh(wingGeo, birdMat); wr.position.x =  0.8;
+      bird.add(wl, wr);
+      bird.userData = {
+        angle: (i / 7) * Math.PI * 2 + Math.random(),
+        radius: radius * (0.8 + Math.random() * 0.4),
+        h: (Math.random() - 0.5) * 6,
+        flap: Math.random() * Math.PI * 2,
+      };
+      flock.add(bird);
+    }
+    flock.userData.speed = 0.05 + Math.random() * 0.03;
+    birdFlocks.push(flock);
+    scene.add(flock);
+  });
+
+  windsock = new THREE.Group();
+  const wx = -108 - RW_DIR.z * 10, wz = 88 + RW_DIR.x * 10;
+  windsock.position.set(wx, heightAt(wx, wz), wz);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 6, 6),
+    new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.5, metalness: 0.4 }));
+  pole.position.y = 3;
+  const sock = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.6, 8, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0xff7a1e, roughness: 0.85, side: THREE.DoubleSide }));
+  sock.rotation.z = Math.PI / 2;
+  sock.position.set(1.2, 5.7, 0);
+  windsock.add(pole, sock);
+  windsock.userData.sock = sock;
+  world.add(windsock);
+}
+
+function updateExtras(dt, t) {
+  birdFlocks.forEach((flock) => {
+    flock.children.forEach((bird) => {
+      const d = bird.userData;
+      d.angle += flock.userData.speed * dt;
+      d.flap  += dt * 4.5;
+      bird.position.set(Math.cos(d.angle) * d.radius, d.h + Math.sin(t * 0.35 + d.flap * 0.1) * 0.6, Math.sin(d.angle) * d.radius);
+      bird.rotation.y = -d.angle;
+      const w = Math.sin(d.flap) * 0.32;
+      bird.children[0].rotation.z =  w;
+      bird.children[1].rotation.z = -w;
+    });
+  });
+  if (windsock) {
+    const sock = windsock.userData.sock;
+    sock.rotation.y = Math.sin(t * 0.9) * 0.35;
+    sock.rotation.z = Math.PI / 2 + 0.12 + Math.sin(t * 1.7) * 0.08;
+  }
+  if (landingBeacon && landingBeacon.visible) {
+    landingBeacon.children[0].scale.setScalar(1 + Math.sin(t * 5) * 0.08);
+    landingBeacon.children[0].material.opacity = 0.7 + Math.sin(t * 5) * 0.2;
+  }
 }
 
 function paintTerrain(geo) {
@@ -649,6 +784,16 @@ function createFire() {
     s.userData.life = Math.random() * s.userData.maxLife;
     g.add(s);
   }
+  // Opaque flame cores — readable against bright sky/ocean where additive washes out
+  for (let i = 0; i < 20; i++) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthWrite: false,
+    }));
+    s.userData.kind = "flameCore";
+    spawnFlame(s);
+    s.userData.life = Math.random() * s.userData.maxLife;
+    g.add(s);
+  }
   for (let i = 0; i < 54; i++) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({
       map: tex, transparent: true, depthWrite: false, opacity: 0.3,
@@ -683,6 +828,7 @@ function createFire() {
   light.position.set(0, 6, 0);
   light.userData.kind = "light";
   g.add(light);
+  g.traverse((o) => { o.renderOrder = 2; }); // above the water planes
   return g;
 }
 
@@ -718,9 +864,11 @@ function buildCockpit() {
     const overlay = document.getElementById('cockpitOverlay');
     if (overlay) overlay.hidden = false;
 
-    // Hélice image — rotation CSS, aucune géométrie 3D
+    // Hélice image — rotation pilotée en JS pour suivre le régime moteur
     const propWrap = document.getElementById('propellerWrap');
     if (propWrap) propWrap.hidden = false;
+    propImg = document.getElementById('propellerImg');
+    if (propImg) propImg.style.animation = "none";
     propeller = null;
   } else {
     // Mode 3D (revert) : cadre géométrique complet
@@ -775,6 +923,7 @@ function buildCockpit() {
     );
     drop.position.set((Math.random() - 0.5) * 18, -3 - Math.random() * 7, -14 - Math.random() * 8);
     drop.userData = { speed: 10 + Math.random() * 14 };
+    drop.renderOrder = 3;
     waterRibbon.add(drop);
   }
   camera.add(waterRibbon);
@@ -817,6 +966,7 @@ function createPath(name, curve, color) {
     group.add(glow);
   }
 
+  group.traverse((o) => { o.renderOrder = 2; }); // rings stay visible above the water
   world.add(group);
   return { curve, group, rings, line };
 }
@@ -833,7 +983,13 @@ function resetMission() {
   state.rudder = 0;
   state.speed  = BASE_SPEED;
   state.mission = "water"; state.activeRing = 0; state.score = 0;
-  state.tankFull = false; state.dropArmed = false;
+  state.tank = 0; state.dropArmed = false;
+  state.fireIntensity = 1; state.lastDouse = -1e9;
+  state.landed = false;
+  state.scooping = false; state.dropping = false; state.shake = 0;
+  state.startTime = performance.now(); state.elapsed = 0;
+  camera.fov = 67;
+  worldDrops?.children.forEach((d) => { d.userData.active = false; d.visible = false; });
   state.stickNeutral = null; state.centerStickRequested = true;
   for (const path of Object.values(paths)) {
     path.rings.forEach((ring) => {
@@ -862,13 +1018,18 @@ function setStatus(msg, isError = false) {
 
 function updateMissionVisuals() {
   paths.water.group.visible = state.mission === "water";
-  paths.fire.group.visible  = state.mission === "fire" || state.mission === "done";
+  paths.fire.group.visible  = state.mission === "fire";
+  if (landingBeacon) landingBeacon.visible = state.mission === "land";
 
   const isFire = state.mission === "fire";
-  const label  = state.mission === "water" ? "Ecoper sur le lac"
-    : state.mission === "fire" ? "Larguer sur le feu" : "Feu maitrise !";
-  ui.missionLabel.textContent = label;
-  ui.tankLabel.textContent    = state.tankFull ? "Plein" : "Vide";
+  const labels = {
+    water: "Ecoper : rase le lac !",
+    fire:  "Larguer sur le feu",
+    land:  "Reviens atterrir !",
+    done:  "Mission accomplie !",
+  };
+  ui.missionLabel.textContent = labels[state.mission] || "";
+  ui.tankLabel.textContent    = `${Math.round(state.tank)}%`;
   ui.ringLabel.textContent    = `${Math.min(state.activeRing, 6)} / 6`;
   ui.scoreLabel.textContent   = String(state.score);
 
@@ -885,23 +1046,96 @@ function updateMissionVisuals() {
   }
 }
 
-function nextMission() {
-  if (state.mission === "water") {
-    state.mission = "fire"; state.activeRing = 0; state.tankFull = true;
-    setStatus("Reservoir plein ! Cap sur le feu — anneaux rouges au nord-est.");
-  } else if (state.mission === "fire") {
-    state.mission = "done"; state.activeRing = 6;
-    fireSystem.visible = false;
-    setStatus("Mission terminee !");
-    if (ui.missionOverlay) {
-      ui.finalScore.textContent = `Score final : ${state.score}`;
-      ui.missionOverlay.hidden = false;
-    }
-  }
+function startFireMission() {
+  state.mission = "fire";
+  state.activeRing = 0;
+  setStatus("Reservoir plein ! Suis les anneaux rouges vers le feu.");
+  sfxPing(1200);
   updateMissionVisuals();
 }
 
+// Scooping: skim the lake below 8.5 to fill the tank
+function updateScoop(dt) {
+  const wasScooping = state.scooping;
+  const dLake = Math.hypot(state.position.x - 8, state.position.z + 8);
+  state.scooping = !state.landed
+    && state.mission === "water" && dLake < 58 && state.position.y < 8.5;
+  if (!state.scooping) return;
+
+  const wasFull = state.tank >= 100;
+  state.tank = Math.min(100, state.tank + dt * 30);
+  state.shake = Math.max(state.shake, 0.7);
+  if (!wasScooping) { setStatus("Ecopage en cours..."); sfxSplash(); }
+  if (state.tank >= 100 && !wasFull) {
+    // Blue course stays up until its last ring — no abrupt switch mid-run
+    if (state.activeRing >= paths.water.rings.length) {
+      startFireMission();
+    } else {
+      setStatus("Reservoir plein ! Termine les anneaux bleus.");
+      sfxPing(1200);
+      updateMissionVisuals();
+    }
+  }
+}
+
+function douseFire(units) {
+  state.lastDouse = performance.now();
+  state.fireIntensity = Math.max(0, state.fireIntensity - units * 0.0045);
+  state.score += units;
+  if (state.fireIntensity <= 0 && state.mission === "fire") {
+    state.score += 400;
+    state.mission = "land";
+    setStatus("Feu eteint ! (+400) Reviens te poser sur la piste — anneau vert.");
+    sfxPing(1400);
+    updateMissionVisuals();
+  }
+}
+
+function applyCamera(dt) {
+  camera.rotation.order = "YXZ";
+  camera.rotation.y = state.yaw;
+  camera.rotation.x = state.pitch * 0.74;
+  camera.rotation.z = state.roll  * 0.76;
+  camera.position.copy(state.position);
+  if (state.shake > 0.01) {
+    const s = state.shake;
+    camera.position.x += (Math.random() - 0.5) * 0.12 * s;
+    camera.position.y += (Math.random() - 0.5) * 0.12 * s;
+    camera.rotation.z += (Math.random() - 0.5) * 0.006 * s;
+    state.shake *= Math.exp(-dt * 3.2);
+  } else state.shake = 0;
+  // FOV opens up when diving fast
+  const targetFov = 67 + Math.max(0, -state.pitch) * 18 + Math.max(0, state.speed - BASE_SPEED) * 0.8;
+  camera.fov += (targetFov - camera.fov) * 0.06;
+  camera.updateProjectionMatrix();
+}
+
+function finishLanding() {
+  state.landed = true;
+  state.mission = "done";
+  const bonus = 500 + Math.max(0, 600 - Math.round(state.elapsed));
+  state.score += bonus;
+  setStatus(`Atterrissage reussi ! +${bonus} points`);
+  sfxPing(1400);
+  updateMissionVisuals();
+  setTimeout(() => {
+    if (ui.missionOverlay) {
+      const m = Math.floor(state.elapsed / 60), s = String(Math.floor(state.elapsed % 60)).padStart(2, "0");
+      ui.finalScore.textContent = `Score final : ${state.score} — Temps : ${m}:${s}`;
+      ui.missionOverlay.hidden = false;
+    }
+  }, 1600);
+}
+
 function updateFlight(dt) {
+  if (state.landed) {
+    state.speed = THREE.MathUtils.lerp(state.speed, 0, 0.03);
+    state.position.addScaledVector(forwardDirection, state.speed * dt);
+    applyCamera(dt);
+    aircraft.position.copy(state.position);
+    return;
+  }
+
   updateKeyboardTargets();
   state.pitch  = THREE.MathUtils.lerp(state.pitch,  state.targetPitch,  0.07);
   state.roll   = THREE.MathUtils.lerp(state.roll,   state.targetRoll,   0.08);
@@ -911,21 +1145,27 @@ function updateFlight(dt) {
   const speedTarget = BASE_SPEED + Math.max(0, -state.pitch) * DIVE_SPEED_GAIN;
   state.speed = THREE.MathUtils.lerp(state.speed, speedTarget, 0.025);
 
-  camera.rotation.order = "YXZ";
-  camera.rotation.y = state.yaw;
-  camera.rotation.x = state.pitch * 0.74;
-  camera.rotation.z =  state.roll  * 0.76;
-  camera.getWorldDirection(forwardDirection);
-  forwardDirection.y = 0;
-  forwardDirection.normalize();
-
+  forwardDirection.set(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
   state.position.addScaledVector(forwardDirection, state.speed * dt);
   state.position.y += Math.sin(state.pitch) * CLIMB_RATE * dt;
-  // Floor follows the terrain so mountains can't be flown through
-  const groundY = heightAt(state.position.x, state.position.z);
-  state.position.y  = THREE.MathUtils.clamp(state.position.y, Math.max(5, groundY + 3), 86);
-  camera.position.copy(state.position);
 
+  const groundY = heightAt(state.position.x, state.position.z);
+  const floorY  = Math.max(5, groundY + 3);
+
+  // Landing gate (only during the final phase)
+  if (state.mission === "land") {
+    const rx = state.position.x + 108, rz = state.position.z - 88;
+    const u  =  rx * RW_DIR.x + rz * RW_DIR.z;
+    const v  = -rx * RW_DIR.z + rz * RW_DIR.x;
+    if (Math.abs(u) < 48 && Math.abs(v) < 9 && state.position.y <= 6.5) {
+      finishLanding();
+    }
+  }
+
+  // Floor follows the terrain so mountains can't be flown through
+  state.position.y = THREE.MathUtils.clamp(state.position.y, floorY, 86);
+
+  applyCamera(dt);
   aircraft.position.copy(state.position);
   aircraft.rotation.set(state.pitch, state.yaw + Math.PI/2, state.roll, "YXZ");
 }
@@ -967,17 +1207,51 @@ function updateRings(dt) {
     });
     state.score    += state.mission === "water" ? 120 : 180;
     state.activeRing += 1;
-    setStatus(state.mission === "water" ? "Anneau d'ecopage valide !" : "Trajectoire de largage validee !");
-    if (state.activeRing >= activePath.rings.length) nextMission();
-    else updateMissionVisuals();
+    sfxPing(980);
+    if (state.activeRing >= activePath.rings.length) {
+      if (state.mission === "water" && state.tank >= 100) {
+        startFireMission();
+        return;
+      }
+      setStatus(state.mission === "water"
+        ? "Anneaux termines ! Rase le lac pour finir de remplir le reservoir."
+        : "Approche validee ! Largue l'eau sur le feu (Espace).");
+    } else {
+      setStatus(state.mission === "water" ? "Anneau d'ecopage valide !" : "Trajectoire de largage validee !");
+    }
+    updateMissionVisuals();
   }
 }
 
 function updateWaterDrop(dt) {
-  const dropping = state.mission === "fire" && (state.keyboard.has("Space") || state.dropArmed);
-  waterRibbon.visible = dropping && state.tankFull;
+  const wantsDrop   = (state.keyboard.has("Space") || state.dropArmed) && !state.landed;
+  const wasDropping = state.dropping;
+  state.dropping = wantsDrop && state.tank > 0 && state.mission !== "water";
+  waterRibbon.visible = state.dropping;
 
-  if (waterRibbon.visible) {
+  if (state.dropping) {
+    if (!wasDropping) sfxSplash();
+    state.tank  = Math.max(0, state.tank - dt * 16); // ~6 s pour vider le reservoir
+    state.shake = Math.max(state.shake, 0.5);
+
+    // Spawn ballistic drops that inherit the aircraft velocity
+    let toSpawn = 2;
+    for (const drop of worldDrops.children) {
+      if (toSpawn === 0) break;
+      if (drop.userData.active) continue;
+      drop.userData.active = true;
+      drop.visible = true;
+      drop.position.copy(state.position);
+      drop.position.y -= 1.6;
+      drop.position.x += (Math.random() - 0.5) * 2.4;
+      drop.position.z += (Math.random() - 0.5) * 2.4;
+      drop.userData.vel.copy(forwardDirection).multiplyScalar(state.speed * 0.9);
+      drop.userData.vel.y = -3 - Math.random() * 2;
+      drop.scale.setScalar(0.9 + Math.random() * 0.8);
+      toSpawn--;
+    }
+
+    // Cockpit ribbon animation
     waterRibbon.children.forEach((drop) => {
       drop.position.y -= drop.userData.speed * dt;
       drop.position.z += 10 * dt;
@@ -989,16 +1263,34 @@ function updateWaterDrop(dt) {
     });
   }
 
-  const fireDistance = state.position.distanceTo(new THREE.Vector3(-82, 18, -44));
-  if (waterRibbon.visible && fireDistance < 30) {
-    state.score += Math.round(30 * dt);
-    fireSystem.scale.multiplyScalar(1 - dt * 0.08);
-    if (fireSystem.scale.x < 0.06) fireSystem.visible = false;
+  // Integrate active drops; count the ones landing on the fire
+  let landedOnFire = 0;
+  for (const drop of worldDrops.children) {
+    if (!drop.userData.active) continue;
+    drop.userData.vel.y -= 22 * dt;
+    drop.position.addScaledVector(drop.userData.vel, dt);
+    const ground = Math.max(heightAt(drop.position.x, drop.position.z), 0.1);
+    if (drop.position.y <= ground + 0.4) {
+      if (Math.hypot(drop.position.x + 82, drop.position.z + 44) < 26) landedOnFire += 1;
+      drop.userData.active = false;
+      drop.visible = false;
+    }
+  }
+  if (landedOnFire > 0 && state.fireIntensity > 0) douseFire(landedOnFire);
+
+  // Partially doused fire slowly re-ignites if left alone
+  if (state.mission === "fire" && state.fireIntensity > 0 && state.fireIntensity < 1
+      && performance.now() - state.lastDouse > 8000) {
+    const before = state.fireIntensity;
+    state.fireIntensity = Math.min(1, state.fireIntensity + dt * 0.03);
+    if (before < 0.55 && state.fireIntensity >= 0.55) setStatus("Le feu reprend ! Reviens larguer.", true);
   }
 }
 
 function updateFire(dt) {
+  fireSystem.visible = state.fireIntensity > 0.01;
   if (!fireSystem.visible) return;
+  fireSystem.scale.setScalar(0.15 + 0.85 * state.fireIntensity);
   const t = performance.now() * 0.001;
   fireSystem.children.forEach((p) => {
     const d = p.userData;
@@ -1017,15 +1309,16 @@ function updateFire(dt) {
       else                         spawnEmber(p);
     }
     const f = d.life / d.maxLife;
-    if (d.kind === "flame") {
+    if (d.kind === "flame" || d.kind === "flameCore") {
       p.position.y += d.rise * dt;
       p.position.x += Math.sin(t * 6 + d.seed) * dt * 1.2;
       const flick = 0.85 + Math.sin(t * 13 + d.seed * 7) * 0.2;
-      const sc = d.baseScale * flick * (1 - f * 0.55);
+      const sc = d.baseScale * flick * (1 - f * 0.55) * (d.kind === "flameCore" ? 0.8 : 1);
       p.scale.set(sc * 0.75, sc * 1.25, 1);
       p.material.opacity = (f < 0.15 ? f / 0.15 : 1 - (f - 0.15) / 0.85) * 0.9;
-      if (f < 0.5) p.material.color.lerpColors(FLAME_A, FLAME_B, f * 2);
-      else         p.material.color.lerpColors(FLAME_B, FLAME_C, (f - 0.5) * 2);
+      if (d.kind === "flameCore") p.material.color.lerpColors(FLAME_B, FLAME_C, f);
+      else if (f < 0.5) p.material.color.lerpColors(FLAME_A, FLAME_B, f * 2);
+      else              p.material.color.lerpColors(FLAME_B, FLAME_C, (f - 0.5) * 2);
     } else if (d.kind === "smoke") {
       p.position.y += d.rise * dt;
       p.position.x += (Math.sin(t * 0.8 + d.seed) * 0.6 + d.drift) * dt;
@@ -1033,7 +1326,7 @@ function updateFire(dt) {
       const sc = d.baseScale * (1 + f * 2.6);
       p.scale.set(sc, sc, 1);
       p.material.rotation = d.seed + t * 0.25;
-      p.material.opacity = (f < 0.2 ? f / 0.2 : 1 - (f - 0.2) / 0.8) * 0.55;
+      p.material.opacity = (f < 0.2 ? f / 0.2 : 1 - (f - 0.2) / 0.8) * 0.72;
       p.material.color.lerpColors(SMOKE_A, SMOKE_B, f);
     } else { // ember
       p.position.y += d.rise * dt;
@@ -1057,10 +1350,21 @@ function updateHud() {
   ui.rollLabel.textContent     = `${rollDeg}°`;
   ui.attitudeBar.style.transform = `translateY(${pitchDeg * 0.7}px) rotate(${-rollDeg}deg)`;
   ui.scoreLabel.textContent    = String(state.score);
+  ui.tankLabel.textContent     = `${Math.round(state.tank)}%`;
 
-  // Bearing to next ring
+  // Mission timer (stops once landed)
+  if (state.mission !== "done") state.elapsed = (performance.now() - state.startTime) / 1000;
+  if (ui.timeLabel) {
+    const m = Math.floor(state.elapsed / 60), s = String(Math.floor(state.elapsed % 60)).padStart(2, "0");
+    ui.timeLabel.textContent = `${m}:${s}`;
+  }
+
+  // Bearing to the current objective: next ring, else the fire, else the runway
   const activePath = paths[state.mission];
-  const ring       = activePath?.rings[state.activeRing];
+  let target = activePath?.rings[state.activeRing]?.position ?? null;
+  if (!target && state.mission === "fire") target = FIRE_CENTER;
+  if (state.mission === "land" || state.mission === "done") target = RUNWAY_CENTER;
+  const ring = target ? { position: target } : null;
   if (ring && ui.compassNeedle && ui.ringDist) {
     const dx = ring.position.x - state.position.x;
     const dz = ring.position.z - state.position.z;
@@ -1082,6 +1386,7 @@ function resize() {
   const w = canvas.clientWidth  || window.innerWidth;
   const h = canvas.clientHeight || window.innerHeight;
   renderer.setSize(w, h, false);
+  composer.setSize(w, h);
   camera.aspect = w / Math.max(h, 1);
   camera.updateProjectionMatrix();
 }
@@ -1093,11 +1398,19 @@ function animate() {
 
   resize();
   updateFlight(dt);
+  updateScoop(dt);
   updateRings(dt);
   updateWaterDrop(dt);
   updateFire(dt);
+  updateExtras(dt, now * 0.001);
+  updateAudio(dt);
   updateHud();
   if (propeller) propeller.rotation.z += dt * 12;
+  // Propeller image follows engine speed (spins down once landed)
+  if (propImg) {
+    propAngle = (propAngle + state.speed * 250 * dt) % 360;
+    propImg.style.transform = `rotate(${propAngle}deg)`;
+  }
 
   // Sky follows camera
   if (skyDome) skyDome.position.copy(camera.position);
@@ -1111,9 +1424,113 @@ function animate() {
     c.position.x = c.userData.baseX + Math.sin(t * (0.5 + i*0.07)) * 6;
   });
 
-  renderer.render(scene, camera);
+  composer.render();
   requestAnimationFrame(animate);
 }
+
+// --- Sound: WebAudio synthesis (no audio files) ---
+function makeNoiseBuffer(ctx) {
+  const len = ctx.sampleRate * 2;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+}
+
+function initAudio() {
+  if (audio.ctx) { audio.ctx.resume?.(); return; }
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  const ctx = new Ctx();
+  audio.ctx = ctx;
+  audio.noiseBuffer = makeNoiseBuffer(ctx);
+  audio.master = ctx.createGain();
+  audio.master.gain.value = audio.muted ? 0 : 0.4;
+  audio.master.connect(ctx.destination);
+
+  // Engine: two detuned saws through a lowpass
+  const engGain   = ctx.createGain(); engGain.gain.value = 0;
+  const engFilter = ctx.createBiquadFilter(); engFilter.type = "lowpass"; engFilter.frequency.value = 420;
+  const o1 = ctx.createOscillator(); o1.type = "sawtooth"; o1.frequency.value = 110;
+  const o2 = ctx.createOscillator(); o2.type = "sawtooth"; o2.frequency.value = 112;
+  o1.connect(engFilter); o2.connect(engFilter);
+  engFilter.connect(engGain); engGain.connect(audio.master);
+  o1.start(); o2.start();
+  audio.nodes.engine = { o1, o2, gain: engGain, filter: engFilter };
+
+  // Wind: looped noise through a bandpass
+  const windSrc = ctx.createBufferSource(); windSrc.buffer = audio.noiseBuffer; windSrc.loop = true;
+  const windFilter = ctx.createBiquadFilter(); windFilter.type = "bandpass"; windFilter.frequency.value = 700; windFilter.Q.value = 0.6;
+  const windGain = ctx.createGain(); windGain.gain.value = 0;
+  windSrc.connect(windFilter); windFilter.connect(windGain); windGain.connect(audio.master);
+  windSrc.start();
+  audio.nodes.wind = { filter: windFilter, gain: windGain };
+
+  // Fire crackle: high noise, gain modulated by proximity each frame
+  const fireSrc = ctx.createBufferSource(); fireSrc.buffer = audio.noiseBuffer; fireSrc.loop = true; fireSrc.playbackRate.value = 0.45;
+  const fireFilter = ctx.createBiquadFilter(); fireFilter.type = "bandpass"; fireFilter.frequency.value = 2400; fireFilter.Q.value = 0.4;
+  const fireGain = ctx.createGain(); fireGain.gain.value = 0;
+  fireSrc.connect(fireFilter); fireFilter.connect(fireGain); fireGain.connect(audio.master);
+  fireSrc.start();
+  audio.nodes.fire = { gain: fireGain };
+
+  // Water spray (scooping / dropping)
+  const spSrc = ctx.createBufferSource(); spSrc.buffer = audio.noiseBuffer; spSrc.loop = true;
+  const spFilter = ctx.createBiquadFilter(); spFilter.type = "lowpass"; spFilter.frequency.value = 900;
+  const spGain = ctx.createGain(); spGain.gain.value = 0;
+  spSrc.connect(spFilter); spFilter.connect(spGain); spGain.connect(audio.master);
+  spSrc.start();
+  audio.nodes.spray = { gain: spGain };
+}
+
+function updateAudio() {
+  if (!audio.ctx || audio.muted) return;
+  const t = audio.ctx.currentTime;
+  const n = audio.nodes;
+  const running = !state.landed;
+
+  const freq = 60 + state.speed * 9;
+  n.engine.o1.frequency.setTargetAtTime(freq, t, 0.1);
+  n.engine.o2.frequency.setTargetAtTime(freq * 1.012 + 1, t, 0.1);
+  const thrum = 1 + Math.sin(performance.now() * 0.03) * 0.12;
+  n.engine.gain.gain.setTargetAtTime(running ? (0.05 + state.speed * 0.004) * thrum : 0, t, 0.08);
+  n.engine.filter.frequency.setTargetAtTime(300 + state.speed * 40, t, 0.1);
+
+  const wind = THREE.MathUtils.clamp((state.speed - 8.5) * 0.06 + Math.max(0, -state.pitch) * 0.25, 0, 0.4);
+  n.wind.gain.gain.setTargetAtTime(wind, t, 0.15);
+  n.wind.filter.frequency.setTargetAtTime(500 + state.speed * 90, t, 0.15);
+
+  const dFire = Math.hypot(state.position.x + 82, state.position.z + 44);
+  const prox  = Math.max(0, 1 - dFire / 130);
+  n.fire.gain.gain.setTargetAtTime(state.fireIntensity * prox * prox * (0.18 + Math.random() * 0.25), t, 0.05);
+
+  n.spray.gain.gain.setTargetAtTime(state.scooping ? 0.4 : state.dropping ? 0.25 : 0, t, 0.1);
+}
+
+function sfxPing(freqHz = 980, vol = 0.3, dur = 0.5) {
+  if (!audio.ctx || audio.muted) return;
+  const ctx = audio.ctx, t = ctx.currentTime;
+  const o  = ctx.createOscillator(); o.type = "sine"; o.frequency.value = freqHz;
+  const gn = ctx.createGain();
+  gn.gain.setValueAtTime(0.0001, t);
+  gn.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+  gn.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(gn); gn.connect(audio.master);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+
+function sfxSplash() {
+  if (!audio.ctx || audio.muted) return;
+  const ctx = audio.ctx, t = ctx.currentTime;
+  const src = ctx.createBufferSource(); src.buffer = audio.noiseBuffer;
+  const f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 1200;
+  const gn = ctx.createGain();
+  gn.gain.setValueAtTime(0.35, t);
+  gn.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+  src.connect(f); f.connect(gn); gn.connect(audio.master);
+  src.start(t); src.stop(t + 0.65);
+}
+
 
 // --- Microbit telemetry ---
 function getStickAngles(data) {
@@ -1223,3 +1640,15 @@ ui.connectButton.addEventListener("click",    connectMicrobit);
 ui.disconnectButton.addEventListener("click", disconnectMicrobit);
 ui.resetButton.addEventListener("click",      resetMission);
 window.addEventListener("resize", resize);
+
+// Audio starts on the first user gesture (browser autoplay policy)
+window.addEventListener("keydown",     initAudio);
+window.addEventListener("pointerdown", initAudio);
+if (ui.soundButton) {
+  ui.soundButton.addEventListener("click", () => {
+    initAudio();
+    audio.muted = !audio.muted;
+    if (audio.master) audio.master.gain.value = audio.muted ? 0 : 0.4;
+    ui.soundButton.textContent = audio.muted ? "🔇 Son : OFF" : "🔊 Son : ON";
+  });
+}

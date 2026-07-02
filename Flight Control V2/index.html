@@ -45,17 +45,20 @@
       <p class="eyebrow">Flight Control V2</p>
       <h1>Canadair CL-415</h1>
       <p class="tagline">
-        Suis les <span class="water-text">anneaux bleus</span> sur le lac pour remplir le reservoir,
-        puis suis les <span class="fire-text">anneaux rouges</span> et largue sur l'incendie.
+        Suis les <span class="water-text">anneaux bleus</span> et <strong>rase le lac</strong> pour ecoper,
+        suis les <span class="fire-text">anneaux rouges</span>, largue sur l'incendie (vise bien !),
+        puis reviens te poser sur la piste.
       </p>
       <div class="actions">
         <button id="connectButton" type="button" class="primary">Connecter micro:bit USB</button>
         <button id="disconnectButton" type="button" class="secondary" disabled>Deconnecter</button>
       </div>
       <button id="resetButton" type="button" class="secondary btn-reset">Relancer la mission</button>
+      <button id="soundButton" type="button" class="secondary btn-reset">🔊 Son : ON</button>
 
       <dl class="data-list">
         <div class="data-row"><dt>Etat</dt><dd id="status">Simulation clavier prete</dd></div>
+        <div class="data-row"><dt>Temps</dt><dd id="timeLabel">0:00</dd></div>
         <div class="data-row"><dt>Altitude</dt><dd id="altitudeLabel">0 m</dd></div>
         <div class="data-row"><dt>Vitesse</dt><dd id="speedLabel">0 km/h</dd></div>
         <div class="data-row"><dt>Cap</dt><dd id="headingLabel">0°</dd></div>
@@ -91,7 +94,7 @@
     <div class="controls-hint">
       Z / Haut : monter &nbsp;·&nbsp; S / Bas : descendre<br>
       Q / Gauche &nbsp;·&nbsp; D / Droite : virer<br>
-      Espace : larguer l'eau
+      Rase le lac pour ecoper &nbsp;·&nbsp; Espace : larguer l'eau
     </div>
 
     <!-- Cockpit windshield overlay -->
