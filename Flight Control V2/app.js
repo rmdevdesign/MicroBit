@@ -368,6 +368,7 @@ const audio = { ctx: null, master: null, muted: false, nodes: {}, noiseBuffer: n
 let aircraft, cockpit, propeller, waterRibbon, fireSystem;
 let worldDrops, landingBeacon, windsock;
 let propImg = null, propAngle = 0;
+let renderWidth = 0, renderHeight = 0, renderDpr = 0;
 const birdFlocks = [];
 let lastFrame = performance.now();
 const forwardDirection = new THREE.Vector3();
@@ -1385,6 +1386,13 @@ function updateHud() {
 function resize() {
   const w = canvas.clientWidth  || window.innerWidth;
   const h = canvas.clientHeight || window.innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  if (w === renderWidth && h === renderHeight && dpr === renderDpr) return;
+
+  renderWidth = w;
+  renderHeight = h;
+  renderDpr = dpr;
+  renderer.setPixelRatio(dpr);
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
   camera.aspect = w / Math.max(h, 1);
