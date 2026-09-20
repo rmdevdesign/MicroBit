@@ -1,4 +1,16 @@
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+const AIRCRAFT_MODEL = {
+  // Deposer un fichier .glb a cote de index.html et indiquer son nom ici.
+  url: "./aircraft.glb",
+  // Cible la taille (plus grande dimension) du modele une fois mis a l'echelle
+  // automatiquement, en unites de scene (l'avion procedural fait environ 4.3).
+  targetSize: 4.3,
+  scale: 1,
+  rotation: { x: 0, y: Math.PI / 2, z: 0 },
+  position: { x: 0, y: 0, z: 0 },
+};
 
 const state = {
   port: null,
@@ -52,7 +64,70 @@ const ui = {
   aircraftOrientation: document.querySelector("#aircraftOrientation"),
   centerStickButton: document.querySelector("#centerStickButton"),
   resetYawButton: document.querySelector("#resetYawButton"),
+  panel: document.querySelector("#panel"),
+  panelToggle: document.querySelector("#panelToggle"),
+  railTabs: document.querySelectorAll(".rail-tab"),
+  panelPanes: document.querySelectorAll(".panel-pane"),
+  debugEnabled: document.querySelector("#debugEnabled"),
+  debugPitch: document.querySelector("#debugPitch"),
+  debugRoll: document.querySelector("#debugRoll"),
+  debugYaw: document.querySelector("#debugYaw"),
+  debugPitchLabel: document.querySelector("#debugPitchLabel"),
+  debugRollLabel: document.querySelector("#debugRollLabel"),
+  debugYawLabel: document.querySelector("#debugYawLabel"),
+  debugResetButton: document.querySelector("#debugResetButton"),
 };
+
+function setActiveTab(tabName) {
+  ui.railTabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabName));
+  ui.panelPanes.forEach((pane) => pane.classList.toggle("active", pane.dataset.pane === tabName));
+}
+
+ui.railTabs.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    ui.panel.classList.remove("collapsed");
+    setActiveTab(btn.dataset.tab);
+  });
+});
+
+setActiveTab("connect");
+
+ui.panelToggle.addEventListener("click", () => {
+  ui.panel.classList.toggle("collapsed");
+});
+
+function applyDebugOrientation() {
+  const pitch = Number(ui.debugPitch.value) || 0;
+  const roll = Number(ui.debugRoll.value) || 0;
+  const yaw = Number(ui.debugYaw.value) || 0;
+  ui.debugPitchLabel.textContent = `${pitch}°`;
+  ui.debugRollLabel.textContent = `${roll}°`;
+  ui.debugYawLabel.textContent = `${yaw}°`;
+
+  state.targetPitch = THREE.MathUtils.degToRad(pitch);
+  state.targetRoll = THREE.MathUtils.degToRad(roll);
+  state.targetYaw = THREE.MathUtils.degToRad(yaw);
+
+  updateTelemetry({
+    pitch,
+    roll,
+    heading: yaw,
+    x: state.telemetry.x,
+    y: state.telemetry.y,
+    z: state.telemetry.z,
+  });
+}
+
+[ui.debugPitch, ui.debugRoll, ui.debugYaw].forEach((input) => {
+  input.addEventListener("input", applyDebugOrientation);
+});
+
+ui.debugResetButton.addEventListener("click", () => {
+  ui.debugPitch.value = 0;
+  ui.debugRoll.value = 0;
+  ui.debugYaw.value = 0;
+  applyDebugOrientation();
+});
 
 const canvas = document.querySelector("#scene");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -146,43 +221,170 @@ function createAircraft() {
   engineRight.position.z = 1.4;
   craft.add(engineRight);
 
-  craft.position.y = 0.6;
   return craft;
 }
 
-const aircraft = createAircraft();
+const aircraft = new THREE.Group();
+let craftVisual = createAircraft();
+aircraft.add(craftVisual);
+
 const yawRig = new THREE.Group();
 yawRig.add(aircraft);
 scene.add(yawRig);
 
-function createAirTrails() {
-  const group = new THREE.Group();
-  const material = new THREE.LineBasicMaterial({
-    color: 0x9ff4ff,
-    transparent: true,
-    opacity: 0.52,
-  });
+function loadAircraftModel(url) {
+  new GLTFLoader().load(
+    url,
+    (gltf) => {
+      const model = gltf.scene;
+      model.rotation.set(AIRCRAFT_MODEL.rotation.x, AIRCRAFT_MODEL.rotation.y, AIRCRAFT_MODEL.rotation.z);
 
-  for (let side = -1; side <= 1; side += 2) {
-    for (let i = 0; i < 8; i += 1) {
-      const z = side * (0.65 + i * 0.22);
-      const y = 0.1 + (i % 2) * 0.08;
-      const points = [
-        new THREE.Vector3(-0.4, y, z),
-        new THREE.Vector3(-1.8, y, z + side * 0.08),
-        new THREE.Vector3(-3.1, y, z + side * 0.03),
-      ];
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), material.clone());
-      line.userData = { baseZ: z, baseY: y, side, offset: i * 0.37 };
-      group.add(line);
+      const rotatedBox = new THREE.Box3().setFromObject(model);
+      const size = rotatedBox.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z) || 1;
+      const autoScale = (AIRCRAFT_MODEL.targetSize / maxDim) * AIRCRAFT_MODEL.scale;
+      model.scale.setScalar(autoScale);
+
+      const center = rotatedBox.getCenter(new THREE.Vector3()).multiplyScalar(autoScale);
+      model.position.set(
+        AIRCRAFT_MODEL.position.x - center.x,
+        AIRCRAFT_MODEL.position.y - center.y,
+        AIRCRAFT_MODEL.position.z - center.z
+      );
+
+      aircraft.remove(craftVisual);
+      craftVisual = model;
+      aircraft.add(craftVisual);
+    },
+    undefined,
+    () => {
+      // Pas de .glb fourni ou chargement impossible: l'avion procedural reste affiche.
     }
-  }
-
-  return group;
+  );
 }
 
-const airTrails = createAirTrails();
-aircraft.add(airTrails);
+loadAircraftModel(AIRCRAFT_MODEL.url);
+
+const attitudeCanvas = document.querySelector("#attitudeHud");
+const attitudeCtx = attitudeCanvas.getContext("2d");
+const ATTITUDE_SIZE = attitudeCanvas.width;
+const ATTITUDE_RADIUS = ATTITUDE_SIZE / 2;
+const PITCH_PIXELS_PER_DEGREE = ATTITUDE_SIZE / 70;
+
+function drawAttitudeIndicator(pitchDeg, rollRad) {
+  const ctx = attitudeCtx;
+  const r = ATTITUDE_RADIUS;
+  ctx.clearRect(0, 0, ATTITUDE_SIZE, ATTITUDE_SIZE);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(r, r, r - 4, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.translate(r, r);
+  ctx.rotate(rollRad);
+  ctx.translate(0, pitchDeg * PITCH_PIXELS_PER_DEGREE);
+
+  const span = ATTITUDE_SIZE * 1.6;
+  const sky = ctx.createLinearGradient(0, -span, 0, 0);
+  sky.addColorStop(0, "#8fd7ff");
+  sky.addColorStop(1, "#2f7dc4");
+  ctx.fillStyle = sky;
+  ctx.fillRect(-span, -span, span * 2, span);
+
+  const ground = ctx.createLinearGradient(0, 0, 0, span);
+  ground.addColorStop(0, "#8a5a2f");
+  ground.addColorStop(1, "#3c2513");
+  ctx.fillStyle = ground;
+  ctx.fillRect(-span, 0, span * 2, span);
+
+  ctx.strokeStyle = "#f4f9ff";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(-span, 0);
+  ctx.lineTo(span, 0);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(244, 249, 255, 0.85)";
+  ctx.font = "10px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (let deg = -60; deg <= 60; deg += 10) {
+    if (deg === 0) {
+      continue;
+    }
+    const y = -deg * PITCH_PIXELS_PER_DEGREE;
+    const isMajor = deg % 30 === 0;
+    const half = isMajor ? 34 : deg % 20 === 0 ? 22 : 14;
+    ctx.strokeStyle = "rgba(244, 249, 255, 0.85)";
+    ctx.lineWidth = isMajor ? 2 : 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-half, y);
+    ctx.lineTo(half, y);
+    ctx.stroke();
+    if (isMajor) {
+      ctx.fillText(String(Math.abs(deg)), -half - 12, y);
+      ctx.fillText(String(Math.abs(deg)), half + 12, y);
+    }
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(r, r);
+  ctx.rotate(rollRad);
+  ctx.strokeStyle = "rgba(244, 249, 255, 0.9)";
+  ctx.lineWidth = 2;
+  [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60].forEach((deg) => {
+    const angle = THREE.MathUtils.degToRad(deg) - Math.PI / 2;
+    const outer = r - 6;
+    const inner = deg % 30 === 0 ? r - 16 : r - 11;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+    ctx.lineTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+    ctx.stroke();
+  });
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(r, r);
+  ctx.fillStyle = "#ffd166";
+  ctx.beginPath();
+  ctx.moveTo(0, -(r - 4));
+  ctx.lineTo(-6, -(r - 16));
+  ctx.lineTo(6, -(r - 16));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(r, r);
+  ctx.strokeStyle = "#ffd166";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-30, 0);
+  ctx.lineTo(-10, 0);
+  ctx.lineTo(-4, 7);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(30, 0);
+  ctx.lineTo(10, 0);
+  ctx.lineTo(4, 7);
+  ctx.stroke();
+  ctx.fillStyle = "#ffd166";
+  ctx.beginPath();
+  ctx.arc(0, 0, 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(r, r, r - 2, 0, Math.PI * 2);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(233, 242, 248, 0.35)";
+  ctx.stroke();
+  ctx.restore();
+}
 
 function resize() {
   const width = canvas.clientWidth || window.innerWidth;
@@ -232,50 +434,14 @@ function getStickAngles(accel) {
   };
 }
 
-function updateAirTrails() {
-  const ax = THREE.MathUtils.clamp(state.accelVisual.x / 1024, -2, 2);
-  const ay = THREE.MathUtils.clamp(state.accelVisual.y / 1024, -2, 2);
-  const az = THREE.MathUtils.clamp((state.accelVisual.z - 1024) / 1024, -2, 2);
-  const time = performance.now() * 0.001;
-  state.smoothAccelMagnitude = THREE.MathUtils.lerp(
-    state.smoothAccelMagnitude,
-    state.accelMagnitude,
-    0.12
-  );
-  const strength = THREE.MathUtils.clamp(state.smoothAccelMagnitude, 0, 2.8);
-
-  airTrails.children.forEach((line, index) => {
-    const { baseZ, baseY, side, offset } = line.userData;
-    const speed = time * (4 + strength * 4) + offset;
-    const length = 0.45 + strength * 2.4;
-    const spread = 0.04 + strength * 0.1;
-    const sway = Math.sin(speed) * spread;
-    const lift = ay * 0.35;
-    const lateral = ax * side * 0.28;
-    const positions = line.geometry.attributes.position.array;
-
-    positions[0] = -0.45;
-    positions[1] = baseY + lift;
-    positions[2] = baseZ + lateral;
-    positions[3] = -0.45 - length * 0.48;
-    positions[4] = baseY + lift + sway;
-    positions[5] = baseZ + side * 0.08 + lateral;
-    positions[6] = -0.45 - length;
-    positions[7] = baseY + lift - sway;
-    positions[8] = baseZ + side * 0.03 + lateral;
-    line.geometry.attributes.position.needsUpdate = true;
-    line.material.opacity = 0.12 + strength * 0.28 + (index % 2) * 0.04;
-  });
-}
-
 function updateStickPreview() {
   const rollDeg = THREE.MathUtils.radToDeg(state.currentRoll);
   const pitchDeg = THREE.MathUtils.radToDeg(state.currentPitch);
-  const pitchOffset = THREE.MathUtils.clamp(rollDeg * -0.28, -18, 18);
-  const pitchTilt = THREE.MathUtils.clamp(rollDeg * -0.85, -42, 42);
-  const scaleY = 1 - Math.min(Math.abs(rollDeg), 65) / 850;
+  const pitchOffset = THREE.MathUtils.clamp(pitchDeg * -0.28, -18, 18);
+  const pitchTilt = THREE.MathUtils.clamp(pitchDeg * -0.85, -42, 42);
+  const scaleY = 1 - Math.min(Math.abs(pitchDeg), 65) / 850;
 
-  ui.stickVisual.style.transform = `translateY(${pitchOffset}px) rotate(${pitchDeg}deg) rotateX(${pitchTilt}deg) scaleY(${scaleY})`;
+  ui.stickVisual.style.transform = `translateY(${pitchOffset}px) rotate(${rollDeg}deg) rotateX(${pitchTilt}deg) scaleY(${scaleY})`;
 }
 
 function animate() {
@@ -285,15 +451,15 @@ function animate() {
   state.currentYaw = lerpAngle(state.currentYaw, state.targetYaw, 0.05);
 
   yawRig.rotation.y = state.currentYaw;
-  aircraft.rotation.z = state.currentRoll;
-  aircraft.rotation.x = state.currentPitch;
+  aircraft.rotation.z = state.currentPitch;
+  aircraft.rotation.x = state.currentRoll;
   aircraft.rotation.y = 0;
 
   aircraft.position.y = 0.6 + Math.sin(performance.now() * 0.0012) * 0.06;
   aircraft.position.x = Math.sin(performance.now() * 0.0007) * 0.18;
   horizon.rotation.z += 0.0008;
-  updateAirTrails();
   updateStickPreview();
+  drawAttitudeIndicator(THREE.MathUtils.radToDeg(state.currentPitch), -state.currentRoll);
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
@@ -381,8 +547,10 @@ function parseIncomingLine(line) {
 
   try {
     const payload = JSON.parse(trimmed);
-    applyOrientation(payload);
-    setStatus("Flux de donnees actif");
+    if (!ui.debugEnabled.checked) {
+      applyOrientation(payload);
+      setStatus("Flux de donnees actif");
+    }
   } catch {
     setStatus(`Trame ignoree: ${trimmed}`, true);
   }
