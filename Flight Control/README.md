@@ -69,6 +69,17 @@ Au premier lancement avec la boussole, le micro:bit peut afficher `tilt to fill 
 
 Si aucun port n'apparait, fermer MakeCode ou tout moniteur serie, debrancher/rebrancher le micro:bit, puis recharger la page.
 
+## Piloter avec un telephone (iPhone / Android)
+
+Sans micro:bit, le telephone peut servir de manette avec ses capteurs d'orientation.
+
+1. Ouvrir la page **en HTTPS** sur le telephone (les capteurs sont bloques en HTTP, sauf `localhost`) : GitHub Pages, ou un tunnel type `cloudflared tunnel --url http://localhost:8080` / `ngrok http 8080`
+2. Onglet `Connexion` > `Activer les capteurs de l'appareil` (iOS demande une autorisation)
+3. Tenir le telephone droit face a soi, comme un volant, puis `Recentrer manette`
+4. Tourner le telephone = roulis, pencher le haut vers soi = cabrer
+
+Les reglages (sensibilite, inversion, cap boussole) s'appliquent aussi. Si l'ecran pivote pendant le pilotage, verrouiller l'orientation dans les reglages du telephone.
+
 ## Reglages
 
 La configuration par defaut actuelle est :

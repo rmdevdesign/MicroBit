@@ -28,6 +28,9 @@ const state = {
   lastHeading: 0,
   continuousHeading: 0,
   resetYawRequested: false,
+  phoneActive: false,
+  phoneSamples: 0,
+  wakeLock: null,
   stickNeutral: null,
   centerStickRequested: true,
   accelVisual: { x: 0, y: 0, z: 0 },
@@ -46,6 +49,7 @@ const state = {
 const ui = {
   connectButton: document.querySelector("#connectButton"),
   disconnectButton: document.querySelector("#disconnectButton"),
+  phoneSensorButton: document.querySelector("#phoneSensorButton"),
   status: document.querySelector("#status"),
   pitchValue: document.querySelector("#pitchValue"),
   rollValue: document.querySelector("#rollValue"),
@@ -637,6 +641,105 @@ async function connectMicrobit() {
     setStatus(error.message || "Connexion impossible", true);
   }
 }
+
+// Capteurs du telephone : deviceorientation (beta/gamma) donne une inclinaison
+// coherente entre iOS et Android, contrairement a devicemotion dont le signe
+// differe. On la convertit en vecteur gravite (milli-g) pour reutiliser
+// applyOrientation() tel quel, comme si c'etait une trame micro:bit.
+// Telephone tenu droit face a soi, comme un volant : tourner = roulis,
+// pencher le haut vers soi = cabrer. Les axes sont permutes pour que
+// getStickAngles() donne ce resultat (x = pousser/tirer, z = volant).
+function handleDeviceOrientation(event) {
+  if (event.beta === null || event.gamma === null || ui.debugEnabled.checked) {
+    return;
+  }
+
+  const beta = THREE.MathUtils.degToRad(event.beta);
+  const gamma = THREE.MathUtils.degToRad(event.gamma);
+  const heading = event.webkitCompassHeading ?? (360 - (event.alpha || 0));
+
+  state.phoneSamples += 1;
+  applyOrientation({
+    x: Math.round(Math.cos(beta) * Math.cos(gamma) * 1024),
+    y: Math.round(Math.sin(beta) * 1024),
+    z: Math.round(Math.cos(beta) * Math.sin(gamma) * 1024),
+    heading,
+  });
+  setStatus("Capteurs de l'appareil actifs");
+}
+
+async function requestWakeLock() {
+  try {
+    state.wakeLock = await navigator.wakeLock?.request("screen");
+  } catch {
+    // Ecran veille possible : pas bloquant.
+  }
+}
+
+async function disablePhoneSensors(message = "Capteurs de l'appareil desactives", isError = false) {
+  window.removeEventListener("deviceorientation", handleDeviceOrientation);
+  state.phoneActive = false;
+  ui.phoneSensorButton.textContent = "Activer les capteurs de l'appareil";
+  setStatus(message, isError);
+  await state.wakeLock?.release().catch(() => {});
+  state.wakeLock = null;
+}
+
+async function enablePhoneSensors() {
+  if (!window.DeviceOrientationEvent) {
+    setStatus("Capteurs d'orientation non disponibles sur cet appareil", true);
+    return;
+  }
+
+  if (!window.isSecureContext) {
+    setStatus("Capteurs bloques : ouvrir la page en HTTPS", true);
+    return;
+  }
+
+  // iOS 13+ : la permission doit etre demandee depuis un geste utilisateur.
+  if (typeof DeviceOrientationEvent.requestPermission === "function") {
+    try {
+      if ((await DeviceOrientationEvent.requestPermission()) !== "granted") {
+        setStatus("Acces aux capteurs refuse (Reglages > Safari > Mouvement et orientation)", true);
+        return;
+      }
+    } catch (error) {
+      setStatus(error.message || "Acces aux capteurs impossible", true);
+      return;
+    }
+  }
+
+  state.phoneActive = true;
+  state.phoneSamples = 0;
+  state.centerStickRequested = true;
+  state.yawInitialized = false;
+  window.addEventListener("deviceorientation", handleDeviceOrientation);
+  ui.phoneSensorButton.textContent = "Desactiver les capteurs de l'appareil";
+  setStatus("Capteurs de l'appareil : en attente de donnees...");
+  requestWakeLock();
+
+  // Un navigateur de bureau declenche l'evenement une fois avec des valeurs nulles.
+  setTimeout(() => {
+    if (state.phoneActive && state.phoneSamples === 0) {
+      disablePhoneSensors("Aucun capteur d'orientation detecte sur cet appareil", true);
+    }
+  }, 2000);
+}
+
+ui.phoneSensorButton.addEventListener("click", () => {
+  if (state.phoneActive) {
+    disablePhoneSensors();
+  } else {
+    enablePhoneSensors();
+  }
+});
+
+// Le wake lock est libere par le navigateur quand l'onglet passe en arriere-plan.
+document.addEventListener("visibilitychange", () => {
+  if (state.phoneActive && document.visibilityState === "visible") {
+    requestWakeLock();
+  }
+});
 
 ui.connectButton.addEventListener("click", connectMicrobit);
 ui.disconnectButton.addEventListener("click", disconnectDevice);
