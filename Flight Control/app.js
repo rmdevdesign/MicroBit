@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { onLanguageChange, t } from "./i18n.js";
+import { createAttitudeIndicator } from "./attitude.js";
+import { getLanguage, onLanguageChange, t } from "./i18n.js";
 
 const AIRCRAFT_MODEL = {
   // Deposer un fichier .glb a cote de index.html et indiquer son nom ici.
@@ -250,126 +251,14 @@ function loadAircraftModel(url) {
 
 loadAircraftModel(AIRCRAFT_MODEL.url);
 
-const attitudeCanvas = document.querySelector("#attitudeHud");
-const attitudeCtx = attitudeCanvas.getContext("2d");
-const ATTITUDE_SIZE = attitudeCanvas.width;
-const ATTITUDE_RADIUS = ATTITUDE_SIZE / 2;
-const PITCH_PIXELS_PER_DEGREE = ATTITUDE_SIZE / 70;
-
-function drawAttitudeIndicator(pitchDeg, rollRad) {
-  const ctx = attitudeCtx;
-  const r = ATTITUDE_RADIUS;
-  ctx.clearRect(0, 0, ATTITUDE_SIZE, ATTITUDE_SIZE);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(r, r, r - 4, 0, Math.PI * 2);
-  ctx.clip();
-  ctx.translate(r, r);
-  ctx.rotate(rollRad);
-  ctx.translate(0, pitchDeg * PITCH_PIXELS_PER_DEGREE);
-
-  const span = ATTITUDE_SIZE * 1.6;
-  const sky = ctx.createLinearGradient(0, -span, 0, 0);
-  sky.addColorStop(0, "#8fd7ff");
-  sky.addColorStop(1, "#2f7dc4");
-  ctx.fillStyle = sky;
-  ctx.fillRect(-span, -span, span * 2, span);
-
-  const ground = ctx.createLinearGradient(0, 0, 0, span);
-  ground.addColorStop(0, "#8a5a2f");
-  ground.addColorStop(1, "#3c2513");
-  ctx.fillStyle = ground;
-  ctx.fillRect(-span, 0, span * 2, span);
-
-  ctx.strokeStyle = "#f4f9ff";
-  ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(-span, 0);
-  ctx.lineTo(span, 0);
-  ctx.stroke();
-
-  ctx.fillStyle = "rgba(244, 249, 255, 0.85)";
-  ctx.font = "10px 'Segoe UI', sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  for (let deg = -60; deg <= 60; deg += 10) {
-    if (deg === 0) {
-      continue;
-    }
-    const y = -deg * PITCH_PIXELS_PER_DEGREE;
-    const isMajor = deg % 30 === 0;
-    const half = isMajor ? 34 : deg % 20 === 0 ? 22 : 14;
-    ctx.strokeStyle = "rgba(244, 249, 255, 0.85)";
-    ctx.lineWidth = isMajor ? 2 : 1.4;
-    ctx.beginPath();
-    ctx.moveTo(-half, y);
-    ctx.lineTo(half, y);
-    ctx.stroke();
-    if (isMajor) {
-      ctx.fillText(String(Math.abs(deg)), -half - 12, y);
-      ctx.fillText(String(Math.abs(deg)), half + 12, y);
-    }
-  }
-  ctx.restore();
-
-  ctx.save();
-  ctx.translate(r, r);
-  ctx.rotate(rollRad);
-  ctx.strokeStyle = "rgba(244, 249, 255, 0.9)";
-  ctx.lineWidth = 2;
-  [-60, -45, -30, -20, -10, 0, 10, 20, 30, 45, 60].forEach((deg) => {
-    const angle = THREE.MathUtils.degToRad(deg) - Math.PI / 2;
-    const outer = r - 6;
-    const inner = deg % 30 === 0 ? r - 16 : r - 11;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
-    ctx.lineTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
-    ctx.stroke();
-  });
-  ctx.restore();
-
-  ctx.save();
-  ctx.translate(r, r);
-  ctx.fillStyle = "#ffd166";
-  ctx.beginPath();
-  ctx.moveTo(0, -(r - 4));
-  ctx.lineTo(-6, -(r - 16));
-  ctx.lineTo(6, -(r - 16));
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-
-  ctx.save();
-  ctx.translate(r, r);
-  ctx.strokeStyle = "#ffd166";
-  ctx.lineWidth = 3;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(-30, 0);
-  ctx.lineTo(-10, 0);
-  ctx.lineTo(-4, 7);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(30, 0);
-  ctx.lineTo(10, 0);
-  ctx.lineTo(4, 7);
-  ctx.stroke();
-  ctx.fillStyle = "#ffd166";
-  ctx.beginPath();
-  ctx.arc(0, 0, 2.6, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(r, r, r - 2, 0, Math.PI * 2);
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = "rgba(233, 242, 248, 0.35)";
-  ctx.stroke();
-  ctx.restore();
-}
+const CARDINALS = {
+  fr: ["N", "NE", "E", "SE", "S", "SO", "O", "NO"],
+  en: ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+};
+const attitudeIndicator = createAttitudeIndicator(
+  document.querySelector("#attitudeHud"),
+  () => CARDINALS[getLanguage()]
+);
 
 function resize() {
   const width = canvas.clientWidth || window.innerWidth;
@@ -444,7 +333,11 @@ function animate() {
   aircraft.position.x = Math.sin(performance.now() * 0.0007) * 0.18;
   horizon.rotation.z += 0.0008;
   updateStickPreview();
-  drawAttitudeIndicator(THREE.MathUtils.radToDeg(state.currentPitch), -state.currentRoll);
+  attitudeIndicator.draw(
+    THREE.MathUtils.radToDeg(state.currentPitch),
+    -state.currentRoll,
+    ui.enableYaw.checked ? state.telemetry.heading : null
+  );
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
