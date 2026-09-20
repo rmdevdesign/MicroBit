@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { onLanguageChange, t } from "./i18n.js";
 
 const AIRCRAFT_MODEL = {
   // Deposer un fichier .glb a cote de index.html et indiquer son nom ici.
@@ -68,10 +69,6 @@ const ui = {
   aircraftOrientation: document.querySelector("#aircraftOrientation"),
   centerStickButton: document.querySelector("#centerStickButton"),
   resetYawButton: document.querySelector("#resetYawButton"),
-  panel: document.querySelector("#panel"),
-  panelToggle: document.querySelector("#panelToggle"),
-  railTabs: document.querySelectorAll(".rail-tab"),
-  panelPanes: document.querySelectorAll(".panel-pane"),
   debugEnabled: document.querySelector("#debugEnabled"),
   debugPitch: document.querySelector("#debugPitch"),
   debugRoll: document.querySelector("#debugRoll"),
@@ -81,24 +78,6 @@ const ui = {
   debugYawLabel: document.querySelector("#debugYawLabel"),
   debugResetButton: document.querySelector("#debugResetButton"),
 };
-
-function setActiveTab(tabName) {
-  ui.railTabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabName));
-  ui.panelPanes.forEach((pane) => pane.classList.toggle("active", pane.dataset.pane === tabName));
-}
-
-ui.railTabs.forEach((btn) => {
-  btn.addEventListener("click", () => {
-    ui.panel.classList.remove("collapsed");
-    setActiveTab(btn.dataset.tab);
-  });
-});
-
-setActiveTab("connect");
-
-ui.panelToggle.addEventListener("click", () => {
-  ui.panel.classList.toggle("collapsed");
-});
 
 function applyDebugOrientation() {
   const pitch = Number(ui.debugPitch.value) || 0;
@@ -469,9 +448,27 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
-function setStatus(message, isError = false) {
-  ui.status.textContent = message;
-  ui.status.style.color = isError ? "var(--danger)" : "var(--text)";
+// Le statut garde sa cle de traduction pour pouvoir se retraduire au changement de langue.
+let currentStatus = { key: "st.waiting", vars: {}, raw: null, isError: false };
+
+function renderStatus() {
+  ui.status.textContent = currentStatus.raw ?? t(currentStatus.key, currentStatus.vars);
+  ui.status.style.color = currentStatus.isError ? "var(--danger)" : "var(--text)";
+}
+
+function setStatus(key, isError = false, vars = {}) {
+  currentStatus = { key, vars, raw: null, isError };
+  renderStatus();
+}
+
+// Message deja formate (ex. erreur du navigateur), affiche tel quel.
+function setStatusRaw(text, isError = false) {
+  currentStatus = { key: null, vars: {}, raw: text, isError };
+  renderStatus();
+}
+
+function announceStart() {
+  document.dispatchEvent(new CustomEvent("flight:started"));
 }
 
 function updateTelemetry(data) {
@@ -482,7 +479,7 @@ function updateTelemetry(data) {
   ui.accelValue.textContent = `x:${state.telemetry.x} y:${state.telemetry.y} z:${state.telemetry.z}`;
   ui.neutralValue.textContent = state.stickNeutral
     ? `x:${state.stickNeutral.x} y:${state.stickNeutral.y} z:${state.stickNeutral.z}`
-    : "En attente";
+    : t("st.waiting");
   ui.hudPitch.textContent = `${Math.round(state.telemetry.pitch)}°`;
   ui.hudRoll.textContent = `${Math.round(state.telemetry.roll)}°`;
   ui.hudYaw.textContent = `${Math.round(state.telemetry.heading)}°`;
@@ -553,10 +550,10 @@ function parseIncomingLine(line) {
     const payload = JSON.parse(trimmed);
     if (!ui.debugEnabled.checked) {
       applyOrientation(payload);
-      setStatus("Flux de donnees actif");
+      setStatus("st.streamActive");
     }
   } catch {
-    setStatus(`Trame ignoree: ${trimmed}`, true);
+    setStatus("st.frameIgnored", true, { line: trimmed });
   }
 }
 
@@ -601,17 +598,17 @@ async function disconnectDevice() {
   state.buffer = "";
   ui.connectButton.disabled = false;
   ui.disconnectButton.disabled = true;
-  setStatus("Deconnecte");
+  setStatus("st.disconnected");
 }
 
 async function connectMicrobit() {
   if (!navigator.serial) {
-    setStatus("Web Serial non disponible dans ce navigateur", true);
+    setStatus("st.noSerial", true);
     return;
   }
 
   try {
-    setStatus("Selection du port USB...");
+    setStatus("st.selecting");
     ui.connectButton.disabled = true;
 
     state.port = await navigator.serial.requestPort({
@@ -622,7 +619,8 @@ async function connectMicrobit() {
     });
     await state.port.open({ baudRate: 115200 });
     ui.disconnectButton.disabled = false;
-    setStatus("Connecte en USB. En attente de trames...");
+    setStatus("st.connected");
+    announceStart();
 
     state.reading = true;
     state.reader = state.port.readable.getReader();
@@ -638,7 +636,11 @@ async function connectMicrobit() {
   } catch (error) {
     ui.connectButton.disabled = false;
     ui.disconnectButton.disabled = true;
-    setStatus(error.message || "Connexion impossible", true);
+    if (error.message) {
+      setStatusRaw(error.message, true);
+    } else {
+      setStatus("st.connectFailed", true);
+    }
   }
 }
 
@@ -665,7 +667,7 @@ function handleDeviceOrientation(event) {
     z: Math.round(Math.cos(beta) * Math.sin(gamma) * 1024),
     heading,
   });
-  setStatus("Capteurs de l'appareil actifs");
+  setStatus("st.phoneActive");
 }
 
 async function requestWakeLock() {
@@ -676,23 +678,27 @@ async function requestWakeLock() {
   }
 }
 
-async function disablePhoneSensors(message = "Capteurs de l'appareil desactives", isError = false) {
+function setPhoneButtonLabel() {
+  ui.phoneSensorButton.textContent = t(state.phoneActive ? "phone.off" : "phone.on");
+}
+
+async function disablePhoneSensors(messageKey = "st.phoneOff", isError = false) {
   window.removeEventListener("deviceorientation", handleDeviceOrientation);
   state.phoneActive = false;
-  ui.phoneSensorButton.textContent = "Activer les capteurs de l'appareil";
-  setStatus(message, isError);
+  setPhoneButtonLabel();
+  setStatus(messageKey, isError);
   await state.wakeLock?.release().catch(() => {});
   state.wakeLock = null;
 }
 
 async function enablePhoneSensors() {
   if (!window.DeviceOrientationEvent) {
-    setStatus("Capteurs d'orientation non disponibles sur cet appareil", true);
+    setStatus("st.noOrientation", true);
     return;
   }
 
   if (!window.isSecureContext) {
-    setStatus("Capteurs bloques : ouvrir la page en HTTPS", true);
+    setStatus("st.insecure", true);
     return;
   }
 
@@ -700,11 +706,15 @@ async function enablePhoneSensors() {
   if (typeof DeviceOrientationEvent.requestPermission === "function") {
     try {
       if ((await DeviceOrientationEvent.requestPermission()) !== "granted") {
-        setStatus("Acces aux capteurs refuse (Reglages > Safari > Mouvement et orientation)", true);
+        setStatus("st.denied", true);
         return;
       }
     } catch (error) {
-      setStatus(error.message || "Acces aux capteurs impossible", true);
+      if (error.message) {
+        setStatusRaw(error.message, true);
+      } else {
+        setStatus("st.sensorFailed", true);
+      }
       return;
     }
   }
@@ -714,14 +724,15 @@ async function enablePhoneSensors() {
   state.centerStickRequested = true;
   state.yawInitialized = false;
   window.addEventListener("deviceorientation", handleDeviceOrientation);
-  ui.phoneSensorButton.textContent = "Desactiver les capteurs de l'appareil";
-  setStatus("Capteurs de l'appareil : en attente de donnees...");
+  setPhoneButtonLabel();
+  setStatus("st.phoneWaiting");
   requestWakeLock();
+  announceStart();
 
   // Un navigateur de bureau declenche l'evenement une fois avec des valeurs nulles.
   setTimeout(() => {
     if (state.phoneActive && state.phoneSamples === 0) {
-      disablePhoneSensors("Aucun capteur d'orientation detecte sur cet appareil", true);
+      disablePhoneSensors("st.phoneNone", true);
     }
   }, 2000);
 }
@@ -750,6 +761,14 @@ ui.resetYawButton.addEventListener("click", () => {
   state.resetYawRequested = true;
 });
 window.addEventListener("resize", resize);
+
+onLanguageChange(() => {
+  renderStatus();
+  updateTelemetry({});
+  setPhoneButtonLabel();
+});
+renderStatus();
+updateTelemetry({});
 
 resize();
 animate();

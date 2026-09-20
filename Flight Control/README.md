@@ -9,6 +9,8 @@ Demo web qui connecte un `BBC micro:bit` en USB avec `Web Serial` et utilise son
 - `server.js` : petit serveur HTTP local
 - `index.html` : interface web
 - `styles.css` : styles
+- `main.js` : interface (onglets, langue FR/EN, plein ecran) et chargement de la vue 3D
+- `i18n.js` : traductions francais / anglais (bouton `EN` / `FR` dans le menu)
 - `app.js` : scene 3D, port serie USB, orientation et trainees d'air
 - `microbit-makecode.ts` : code a coller dans MakeCode
 
@@ -62,7 +64,7 @@ Au premier lancement avec la boussole, le micro:bit peut afficher `tilt to fill 
 
 1. Garder le micro:bit branche en USB
 2. Ouvrir la page avec Chrome ou Edge
-3. Cliquer sur `Connecter le micro:bit en USB`
+3. Cliquer sur `Connecter`
 4. Choisir le port serie du micro:bit (`mbed Serial Port`, `CMSIS-DAP`, `micro:bit`, ou nom similaire)
 5. Placer la manette au neutre, puis cliquer sur `Recentrer manette`
 6. Tourner la manette pour le roulis, pousser ou tirer pour le tangage

@@ -4,25 +4,35 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Micro:bit Flight Controller</title>
+  <meta name="description" content="Simulateur de vol 3D piloté avec un micro:bit ou votre téléphone. Inclinez la manette, l'avion suit.">
+  <meta name="theme-color" content="#07111a">
+  <meta name="author" content="RM Dev Design">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Micro:bit Flight Controller">
+  <meta property="og:description" content="Simulateur de vol 3D piloté avec un micro:bit ou votre téléphone. Inclinez la manette, l'avion suit.">
+  <meta property="og:image" content="https://rmdevdesign.github.io/MicroBit/Flight%20Control/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <div class="app-shell">
     <aside class="panel" id="panel">
       <div class="panel-rail">
-        <button class="rail-toggle" id="panelToggle" type="button" title="Replier / deplier le panneau" aria-label="Replier ou deplier le panneau">
+        <button class="rail-toggle" id="panelToggle" type="button" data-i18n-attr="title:toggle.title,aria-label:toggle.aria" title="Replier / déplier le panneau" aria-label="Replier ou déplier le panneau">
           <svg id="toggleIcon" viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <path d="M13 4l-6 6 6 6" />
           </svg>
         </button>
         <div class="rail-tabs">
-          <button class="rail-tab active" type="button" data-tab="connect" title="Connexion" aria-label="Connexion">
+          <button class="rail-tab active" type="button" data-tab="connect" data-i18n-attr="title:tab.connect,aria-label:tab.connect" title="Connexion" aria-label="Connexion">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 7V3M15 7V3M8 7h8l1 5a5 5 0 0 1-10 0l1-5Z" />
               <path d="M12 16v5" />
             </svg>
           </button>
-          <button class="rail-tab" type="button" data-tab="controls" title="Manette" aria-label="Manette">
+          <button class="rail-tab" type="button" data-tab="controls" data-i18n-attr="title:tab.controls,aria-label:tab.controls" title="Manette" aria-label="Manette">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M7 9h3m-1.5-1.5v3" />
               <circle cx="16" cy="9" r="0.9" fill="currentColor" stroke="none" />
@@ -30,14 +40,14 @@
               <path d="M5.5 8.5A2.5 2.5 0 0 1 8 6h8a2.5 2.5 0 0 1 2.5 2.5v6a2.5 2.5 0 0 1-4.5 1.5l-.7-.9a2 2 0 0 0-1.6-.8h-1.4a2 2 0 0 0-1.6.8l-.7.9A2.5 2.5 0 0 1 3.5 14.5v-6A2.5 2.5 0 0 1 5.5 8.5Z" />
             </svg>
           </button>
-          <button class="rail-tab" type="button" data-tab="telemetry" title="Telemetrie" aria-label="Telemetrie">
+          <button class="rail-tab" type="button" data-tab="telemetry" data-i18n-attr="title:tab.telemetry,aria-label:tab.telemetry" title="Télémétrie" aria-label="Télémétrie">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="4" y="12" width="4" height="8" rx="1" />
               <rect x="10" y="7" width="4" height="13" rx="1" />
               <rect x="16" y="3" width="4" height="17" rx="1" />
             </svg>
           </button>
-          <button class="rail-tab" type="button" data-tab="debug" title="Debug" aria-label="Debug">
+          <button class="rail-tab" type="button" data-tab="debug" data-i18n-attr="title:tab.debug,aria-label:tab.debug" title="Debug" aria-label="Debug">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M5 7v10M12 4v16M19 9v6" />
               <circle cx="5" cy="14" r="1.6" fill="currentColor" stroke="none" />
@@ -46,83 +56,97 @@
             </svg>
           </button>
         </div>
+        <div class="rail-extras">
+          <button class="rail-action" id="fullscreenButton" type="button" hidden data-i18n-attr="title:rail.fullscreen,aria-label:rail.fullscreen" title="Plein écran" aria-label="Plein écran">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+            </svg>
+          </button>
+          <button class="rail-action rail-lang" id="languageButton" type="button" data-i18n-attr="title:rail.language,aria-label:rail.language" title="Switch to English" aria-label="Switch to English">EN</button>
+        </div>
       </div>
 
       <div class="panel-content">
         <div class="panel-pane active" data-pane="connect">
-          <p class="eyebrow">micro:bit + USB Serial</p>
-          <h1>Avion 3D pilote par manette</h1>
-          <p class="intro">
-            Fixez le micro:bit dans la manette, face visible et cable vers le bas.
-            Tournez la manette pour le roulis, poussez ou tirez pour le tangage.
-            La connexion passe maintenant par le cable USB pour eviter les soucis Bluetooth.
-          </p>
+          <a class="brand" href="https://rmdev.design" target="_blank" rel="noopener" data-i18n-attr="aria-label:brand.aria" aria-label="RM Dev Design — rmdev.design">
+            <img src="./rmdev-logo.png" alt="RM Dev Design">
+          </a>
+          <h1 data-i18n="home.title">Volez avec votre micro:bit</h1>
+          <p class="intro" data-i18n="home.intro">Inclinez la manette, l'avion 3D suit.</p>
 
-          <section class="firmware-card" aria-labelledby="firmwareTitle">
-            <h2 id="firmwareTitle">Installer le programme micro:bit</h2>
-            <p>
-              Telechargez le firmware, puis glissez le fichier sur le lecteur
-              <code>MICROBIT</code>. Laissez ensuite le micro:bit branche en USB.
+          <section class="firmware-card" id="firmwareCard" aria-labelledby="firmwareTitle">
+            <h2 id="firmwareTitle" data-i18n="step1.title">1. Préparer le micro:bit</h2>
+            <p data-i18n-html="step1.text">
+              Téléchargez le programme et déposez-le sur la clé <code>MICROBIT</code>
+              qui apparaît quand vous le branchez.
             </p>
-            <a class="button-link" href="./microbit-FlightControl.hex" download>
-              Telecharger le fichier .hex
-            </a>
+            <a class="button-link" href="./microbit-FlightControl.hex" download data-i18n="step1.button">Télécharger</a>
           </section>
 
-          <div class="actions">
-            <button id="connectButton" type="button">Connecter le micro:bit en USB</button>
-            <button id="disconnectButton" type="button" class="secondary" disabled>Deconnecter</button>
-          </div>
-
-          <section class="firmware-card" aria-labelledby="phoneTitle">
-            <h2 id="phoneTitle">Piloter avec ce telephone</h2>
-            <p>
-              Tenez le telephone droit face a vous, comme un volant : tournez-le pour le roulis,
-              penchez le haut vers vous ou vers l'avant pour le tangage. Cliquez sur
-              <code>Recentrer manette</code> pour definir la position neutre.
-              Necessite une page en HTTPS.
-            </p>
-            <button id="phoneSensorButton" type="button">Activer les capteurs de l'appareil</button>
+          <section class="firmware-card" id="connectCard" aria-labelledby="connectTitle">
+            <h2 id="connectTitle" data-i18n="step2.title">2. Décoller</h2>
+            <p id="connectText" data-i18n="step2.text">Cliquez sur Connecter, choisissez votre micro:bit, et c'est parti. Fonctionne sur Chrome et Edge.</p>
+            <div class="actions">
+              <button id="connectButton" type="button" data-i18n="step2.connect">Connecter</button>
+              <button id="disconnectButton" type="button" class="secondary" disabled data-i18n="step2.disconnect">Déconnecter</button>
+            </div>
           </section>
+
+          <section class="firmware-card" aria-labelledby="tuneTitle">
+            <h2 id="tuneTitle" data-i18n="step3.title">3. Personnaliser</h2>
+            <p data-i18n="step3.text">Inversez les axes, ajustez la sensibilité, tournez l'avion… Tout se règle depuis l'onglet Manette du menu.</p>
+            <button type="button" class="secondary" data-goto-tab="controls" data-i18n="step3.button">Régler la manette</button>
+          </section>
+
+          <section class="firmware-card" id="phoneCard" aria-labelledby="phoneTitle">
+            <h2 id="phoneTitle" data-i18n="phone.title">Pas de micro:bit ?</h2>
+            <p data-i18n="phone.text">Utilisez votre téléphone : tenez-le droit comme un volant, et inclinez-le.</p>
+            <button id="phoneSensorButton" type="button" data-i18n="phone.on">Utiliser mon téléphone</button>
+          </section>
+
+          <footer class="credit">
+            <span data-i18n="credit.text">Conçu et développé par</span>
+            <a href="https://rmdev.design" target="_blank" rel="noopener">RM Dev Design</a>
+          </footer>
         </div>
 
         <div class="panel-pane" data-pane="controls">
-          <h1 class="pane-title">Reglages manette</h1>
-          <section class="axis-controls" aria-label="Reglages des axes">
+          <h1 class="pane-title" data-i18n="controls.title">Réglages manette</h1>
+          <section class="axis-controls" data-i18n-attr="aria-label:controls.aria" aria-label="Réglages des axes">
             <label>
               <input id="invertPitch" type="checkbox">
-              <span>Inverser tangage</span>
+              <span data-i18n="controls.invertPitch">Inverser tangage</span>
             </label>
             <label>
               <input id="invertRoll" type="checkbox">
-              <span>Inverser roulis</span>
+              <span data-i18n="controls.invertRoll">Inverser roulis</span>
             </label>
             <label>
               <input id="enableYaw" type="checkbox">
-              <span>Activer cap boussole</span>
+              <span data-i18n="controls.enableYaw">Activer cap boussole</span>
             </label>
             <label class="range-control">
-              <span>Sensibilite roulis</span>
+              <span data-i18n="controls.rollSensitivity">Sensibilité roulis</span>
               <input id="rollSensitivity" type="range" min="0.5" max="2" step="0.1" value="1">
             </label>
             <label class="range-control">
-              <span>Sensibilite tangage</span>
+              <span data-i18n="controls.pitchSensitivity">Sensibilité tangage</span>
               <input id="pitchSensitivity" type="range" min="0.5" max="2" step="0.1" value="1">
             </label>
             <label class="range-control">
-              <span>Orientation avion</span>
+              <span data-i18n="controls.orientation">Orientation avion</span>
               <input id="aircraftOrientation" type="range" min="-180" max="180" step="1" value="0">
             </label>
-            <button id="centerStickButton" type="button" class="secondary compact">Recentrer manette</button>
-            <button id="resetYawButton" type="button" class="secondary compact">Recentrer cap</button>
+            <button id="centerStickButton" type="button" class="secondary compact" data-i18n="controls.center">Recentrer manette</button>
+            <button id="resetYawButton" type="button" class="secondary compact" data-i18n="controls.resetYaw">Recentrer cap</button>
           </section>
         </div>
 
         <div class="panel-pane" data-pane="telemetry">
-          <h1 class="pane-title">Telemetrie</h1>
+          <h1 class="pane-title" data-i18n="telemetry.title">Télémétrie</h1>
           <dl class="telemetry">
             <div>
-              <dt>Etat</dt>
+              <dt data-i18n="telemetry.state">État</dt>
               <dd id="status">En attente</dd>
             </div>
             <div>
@@ -138,7 +162,7 @@
               <dd id="yawValue">0°</dd>
             </div>
             <div>
-              <dt>Neutre</dt>
+              <dt data-i18n="telemetry.neutral">Neutre</dt>
               <dd id="neutralValue">En attente</dd>
             </div>
             <div>
@@ -148,34 +172,34 @@
           </dl>
 
           <div class="notes">
-            <p>Format attendu via port serie USB:</p>
+            <p data-i18n="telemetry.format">Format attendu via le port série USB :</p>
             <code>{"pitch":12,"roll":-8,"heading":0,"x":120,"y":-64,"z":1001}</code>
           </div>
         </div>
 
         <div class="panel-pane" data-pane="debug">
-          <h1 class="pane-title">Debug</h1>
-          <p class="intro">
-            Pilote l'avion et la mire a la souris, sans micro:bit branche.
+          <h1 class="pane-title" data-i18n="tab.debug">Debug</h1>
+          <p class="intro" data-i18n="debug.intro">
+            Pilote l'avion et la mire à la souris, sans micro:bit branché.
           </p>
-          <section class="axis-controls" aria-label="Pilotage manuel de debug">
+          <section class="axis-controls" data-i18n-attr="aria-label:debug.aria" aria-label="Pilotage manuel de debug">
             <label>
               <input id="debugEnabled" type="checkbox">
-              <span>Activer le mode debug (ignore le micro:bit)</span>
+              <span data-i18n="debug.enable">Activer le mode debug (ignore le micro:bit)</span>
             </label>
             <label class="range-control">
-              <span>Tangage manuel: <strong id="debugPitchLabel">0°</strong></span>
+              <span><span data-i18n="debug.pitch">Tangage manuel :</span> <strong id="debugPitchLabel">0°</strong></span>
               <input id="debugPitch" type="range" min="-60" max="60" step="1" value="0">
             </label>
             <label class="range-control">
-              <span>Roulis manuel: <strong id="debugRollLabel">0°</strong></span>
+              <span><span data-i18n="debug.roll">Roulis manuel :</span> <strong id="debugRollLabel">0°</strong></span>
               <input id="debugRoll" type="range" min="-80" max="80" step="1" value="0">
             </label>
             <label class="range-control">
-              <span>Cap manuel: <strong id="debugYawLabel">0°</strong></span>
+              <span><span data-i18n="debug.yaw">Cap manuel :</span> <strong id="debugYawLabel">0°</strong></span>
               <input id="debugYaw" type="range" min="-180" max="180" step="1" value="0">
             </label>
-            <button id="debugResetButton" type="button" class="secondary compact">Reinitialiser</button>
+            <button id="debugResetButton" type="button" class="secondary compact" data-i18n="debug.reset">Réinitialiser</button>
           </section>
         </div>
       </div>
@@ -183,18 +207,28 @@
 
     <main class="viewer">
       <canvas id="scene"></canvas>
-      <div class="attitude-indicator" aria-label="Horizon artificiel">
+      <div class="attitude-indicator" data-i18n-attr="aria-label:viewer.attitude" aria-label="Horizon artificiel">
         <canvas id="attitudeHud" width="220" height="220"></canvas>
       </div>
-      <div class="hud">
-        <span>Roulis: <strong id="hudRoll">0°</strong></span>
-        <span>Tangage: <strong id="hudPitch">0°</strong></span>
-        <span>Cap: <strong id="hudYaw">0°</strong></span>
+      <div class="viewer-footer">
+        <div class="hud">
+          <span><span data-i18n="hud.roll">Roulis :</span> <strong id="hudRoll">0°</strong></span>
+          <span><span data-i18n="hud.pitch">Tangage :</span> <strong id="hudPitch">0°</strong></span>
+          <span><span data-i18n="hud.yaw">Cap :</span> <strong id="hudYaw">0°</strong></span>
+        </div>
+        <a class="viewer-badge" href="https://rmdev.design" target="_blank" rel="noopener" data-i18n-attr="aria-label:viewer.badge" aria-label="Créé par RM Dev Design — rmdev.design">
+          <img src="./rmdev-logo.png" alt="RM Dev Design">
+        </a>
       </div>
-      <div class="stick-preview" aria-label="Visualisation de la manette">
+      <div class="stick-preview" data-i18n-attr="aria-label:viewer.stick" aria-label="Visualisation de la manette">
         <div class="stick-slot">
           <img id="stickVisual" src="./levier de commande.png" alt="">
         </div>
+      </div>
+      <div class="load-error" id="loadError" role="alert" hidden>
+        <h2 data-i18n="error.title">La vue 3D n'a pas pu se charger</h2>
+        <p data-i18n="error.text">Vérifiez votre connexion Internet et que WebGL est activé, puis rechargez la page.</p>
+        <button type="button" onclick="location.reload()" data-i18n="error.reload">Recharger</button>
       </div>
     </main>
   </div>
@@ -207,6 +241,6 @@
     }
   }
   </script>
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./main.js"></script>
 </body>
 </html>
