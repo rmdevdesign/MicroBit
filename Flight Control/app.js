@@ -33,6 +33,7 @@ const state = {
   phoneSamples: 0,
   wakeLock: null,
   pitchInvertBeforePhone: null,
+  phoneSnap: 0,
   stickNeutral: null,
   centerStickRequested: true,
   accelVisual: { x: 0, y: 0, z: 0 },
@@ -652,6 +653,18 @@ async function connectMicrobit() {
 // Telephone tenu droit face a soi, comme un volant : tourner = roulis,
 // pencher le haut vers soi = cabrer. Les axes sont permutes pour que
 // getStickAngles() donne ce resultat (x = pousser/tirer, z = volant).
+// Les angles beta/gamma sont toujours donnes par rapport au telephone en portrait,
+// meme quand l'ecran pivote. On reconstruit donc le vecteur "haut" (oppose a la
+// gravite) dans le repere du telephone, puis on le tourne par quarts de tour pour
+// que le haut de la position neutre corresponde au haut de la manette. Ce quart
+// de tour est mesure au (re)centrage, donc independant du verrouillage de rotation.
+function updatePhoneSnap(upX, upY) {
+  if (Math.hypot(upX, upY) < 0.5) {
+    return;
+  }
+  state.phoneSnap = Math.round(Math.atan2(upX, upY) / (Math.PI / 2)) * (Math.PI / 2);
+}
+
 function handleDeviceOrientation(event) {
   if (event.beta === null || event.gamma === null || ui.debugEnabled.checked) {
     return;
@@ -661,11 +674,24 @@ function handleDeviceOrientation(event) {
   const gamma = THREE.MathUtils.degToRad(event.gamma);
   const heading = event.webkitCompassHeading ?? (360 - (event.alpha || 0));
 
+  const upX = -Math.cos(beta) * Math.sin(gamma);
+  const upY = Math.sin(beta);
+  const upZ = Math.cos(beta) * Math.cos(gamma);
+
+  if (state.centerStickRequested) {
+    updatePhoneSnap(upX, upY);
+  }
+
+  const cos = Math.cos(state.phoneSnap);
+  const sin = Math.sin(state.phoneSnap);
+  const screenX = upX * cos - upY * sin;
+  const screenY = upX * sin + upY * cos;
+
   state.phoneSamples += 1;
   applyOrientation({
-    x: Math.round(Math.cos(beta) * Math.cos(gamma) * 1024),
-    y: Math.round(Math.sin(beta) * 1024),
-    z: Math.round(Math.cos(beta) * Math.sin(gamma) * 1024),
+    x: Math.round(upZ * 1024),
+    y: Math.round(screenY * 1024),
+    z: Math.round(-screenX * 1024),
     heading,
   });
   setStatus("st.phoneActive");
@@ -731,6 +757,7 @@ async function enablePhoneSensors() {
   state.pitchInvertBeforePhone = ui.invertPitch.checked;
   ui.invertPitch.checked = true;
   state.phoneSamples = 0;
+  state.phoneSnap = 0;
   state.centerStickRequested = true;
   state.yawInitialized = false;
   window.addEventListener("deviceorientation", handleDeviceOrientation);
