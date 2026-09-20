@@ -32,6 +32,7 @@ const state = {
   phoneActive: false,
   phoneSamples: 0,
   wakeLock: null,
+  pitchInvertBeforePhone: null,
   stickNeutral: null,
   centerStickRequested: true,
   accelVisual: { x: 0, y: 0, z: 0 },
@@ -685,6 +686,11 @@ function setPhoneButtonLabel() {
 async function disablePhoneSensors(messageKey = "st.phoneOff", isError = false) {
   window.removeEventListener("deviceorientation", handleDeviceOrientation);
   state.phoneActive = false;
+  // Rend le reglage d'inversion du tangage tel qu'il etait avant le mode telephone.
+  if (state.pitchInvertBeforePhone !== null) {
+    ui.invertPitch.checked = state.pitchInvertBeforePhone;
+    state.pitchInvertBeforePhone = null;
+  }
   setPhoneButtonLabel();
   setStatus(messageKey, isError);
   await state.wakeLock?.release().catch(() => {});
@@ -720,6 +726,10 @@ async function enablePhoneSensors() {
   }
 
   state.phoneActive = true;
+  // Tenu comme un volant, le telephone donne un tangage a l'envers par defaut :
+  // on coche l'inversion (modifiable ensuite dans l'onglet Manette).
+  state.pitchInvertBeforePhone = ui.invertPitch.checked;
+  ui.invertPitch.checked = true;
   state.phoneSamples = 0;
   state.centerStickRequested = true;
   state.yawInitialized = false;
