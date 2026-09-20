@@ -119,7 +119,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true 
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x07111a, 16, 36);
+scene.fog = new THREE.Fog(0x0f1115, 16, 36);
 
 const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
 camera.position.set(4.5, 2.8, 6.5);
@@ -132,17 +132,17 @@ const key = new THREE.DirectionalLight(0xffffff, 1.6);
 key.position.set(6, 8, 10);
 scene.add(key);
 
-const fill = new THREE.PointLight(0x67d6ff, 20, 24, 2);
+const fill = new THREE.PointLight(0x22d3ee, 20, 24, 2);
 fill.position.set(-5, -2, 6);
 scene.add(fill);
 
-const grid = new THREE.GridHelper(30, 30, 0x2e596f, 0x173344);
+const grid = new THREE.GridHelper(30, 30, 0x2a7f94, 0x1a2630);
 grid.position.y = -2.6;
 scene.add(grid);
 
 const horizonGeometry = new THREE.RingGeometry(8.5, 8.8, 64);
 const horizonMaterial = new THREE.MeshBasicMaterial({
-  color: 0x123146,
+  color: 0x1c2a3c,
   side: THREE.DoubleSide,
   transparent: true,
   opacity: 0.42,
@@ -161,7 +161,7 @@ function createAircraft() {
     roughness: 0.5,
   });
   const blue = new THREE.MeshStandardMaterial({
-    color: 0x67d6ff,
+    color: 0x22d3ee,
     metalness: 0.1,
     roughness: 0.35,
   });

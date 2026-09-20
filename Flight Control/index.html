@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Micro:bit Flight Controller</title>
   <meta name="description" content="Simulateur de vol 3D piloté avec un micro:bit ou votre téléphone. Inclinez la manette, l'avion suit.">
-  <meta name="theme-color" content="#07111a">
+  <meta name="theme-color" content="#0f1115">
   <meta name="author" content="RM Dev Design">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
@@ -14,6 +14,9 @@
   <meta property="og:description" content="Simulateur de vol 3D piloté avec un micro:bit ou votre téléphone. Inclinez la manette, l'avion suit.">
   <meta property="og:image" content="https://rmdevdesign.github.io/MicroBit/Flight%20Control/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -71,11 +74,12 @@
           <a class="brand" href="https://rmdev.design" target="_blank" rel="noopener" data-i18n-attr="aria-label:brand.aria" aria-label="RM Dev Design — rmdev.design">
             <img src="./rmdev-logo.png" alt="RM Dev Design">
           </a>
-          <h1 data-i18n="home.title">Volez avec votre micro:bit</h1>
+          <p class="badge-row"><span class="badge" data-i18n="home.badge">Simulateur de vol</span></p>
+          <h1 data-i18n-html="home.title">Volez avec votre <span class="gradient-text">micro:bit</span></h1>
           <p class="intro" data-i18n="home.intro">Inclinez la manette, l'avion 3D suit.</p>
 
           <section class="firmware-card" id="firmwareCard" aria-labelledby="firmwareTitle">
-            <h2 id="firmwareTitle" data-i18n="step1.title">1. Préparer le micro:bit</h2>
+            <h2 id="firmwareTitle"><span class="step-num" aria-hidden="true">1</span><span data-i18n="step1.title">Préparer le micro:bit</span></h2>
             <p data-i18n-html="step1.text">
               Téléchargez le programme et déposez-le sur la clé <code>MICROBIT</code>
               qui apparaît quand vous le branchez.
@@ -84,7 +88,7 @@
           </section>
 
           <section class="firmware-card" id="connectCard" aria-labelledby="connectTitle">
-            <h2 id="connectTitle" data-i18n="step2.title">2. Décoller</h2>
+            <h2 id="connectTitle"><span class="step-num" aria-hidden="true">2</span><span data-i18n="step2.title">Décoller</span></h2>
             <p id="connectText" data-i18n="step2.text">Cliquez sur Connecter, choisissez votre micro:bit, et c'est parti. Fonctionne sur Chrome et Edge.</p>
             <div class="actions">
               <button id="connectButton" type="button" data-i18n="step2.connect">Connecter</button>
@@ -93,7 +97,7 @@
           </section>
 
           <section class="firmware-card" aria-labelledby="tuneTitle">
-            <h2 id="tuneTitle" data-i18n="step3.title">3. Personnaliser</h2>
+            <h2 id="tuneTitle"><span class="step-num" aria-hidden="true">3</span><span data-i18n="step3.title">Personnaliser</span></h2>
             <p data-i18n="step3.text">Inversez les axes, ajustez la sensibilité, tournez l'avion… Tout se règle depuis l'onglet Manette du menu.</p>
             <button type="button" class="secondary" data-goto-tab="controls" data-i18n="step3.button">Régler la manette</button>
           </section>
